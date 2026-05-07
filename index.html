@@ -1033,6 +1033,32 @@
   </div>
 </div>
 
+<!-- Отчет по прошедшей дате (эффективность + ссылка на ролик) -->
+<div class="proj-overlay" id="result-overlay" onclick="closeResultModalOutside(event)">
+  <div class="proj-modal" style="padding-bottom:26px">
+    <div class="modal-handle"></div>
+    <div class="proj-title" id="result-title">Отчет</div>
+
+    <div class="proj-field">
+      <label>Ссылка на ролик в Instagram</label>
+      <input type="text" id="result-ig-url" placeholder="Вставь ссылку...">
+    </div>
+
+    <div class="proj-field">
+      <label>Скрины эффективности (до 50MB файл)</label>
+      <div id="result-upload-queue" style="display:none;flex-direction:column;gap:8px"></div>
+      <button class="media-upload-btn" style="width:100%;margin-top:8px" onclick="document.getElementById('result-file-input').click()">+ Добавить скрины</button>
+      <input type="file" id="result-file-input" accept="image/*" style="display:none" multiple onchange="handleResultFiles(event)">
+      <div id="result-thumbs" style="margin-top:10px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none"></div>
+    </div>
+
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-cancel" onclick="closeResultModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveResult()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- Выбор сценария для даты (открывается по "+" в календаре) -->
 <div class="proj-overlay" id="calendar-pick-overlay" onclick="closeCalendarPickOutside(event)">
   <div class="proj-modal" style="padding-bottom:26px">
@@ -1167,6 +1193,10 @@ let calendarSelectedDate = '';
 let calendarPickDate = ''; // дата, для которой сейчас выбираем сценарий через "+"
 let mediaLibrary = []; // список медиа из Supabase таблицы (общий для всех устройств)
 let mediaFilter = 'all'; // all | pending | approved
+let calendarResults = {}; // scenarioId -> { id, ig_url, images[] }
+let editingResultScenarioId = null;
+let editingResultId = null;
+let pendingResultImages = []; // urls
 
 function isNetworkError(e) {
   const msg = (e && e.message ? e.message : String(e || '')).toLowerCase();
@@ -2047,6 +2077,29 @@ function getCalendarItemsForDate(dateStr) {
   return scenarios.filter(s => getScenarioReleaseDate(s.id) === dateStr);
 }
 
+function isPastDate(dateStr) {
+  if (!dateStr) return false;
+  const d = new Date(dateStr + 'T00:00:00');
+  const today = new Date();
+  const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return d.getTime() < t.getTime();
+}
+
+async function loadCalendarResultsForDate(dateStr) {
+  calendarResults = {};
+  if (!dateStr || !currentProjectId) return;
+  if (!isPastDate(dateStr)) return;
+  try {
+    const rows = await api(`/rest/v1/scenario_results?select=*&project_id=eq.${currentProjectId}&date=eq.${dateStr}`);
+    (rows || []).forEach(r => {
+      const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
+      calendarResults[r.scenario_id] = { id: r.id, ig_url: r.ig_url || '', images: Array.isArray(imgs) ? imgs : [] };
+    });
+  } catch (e) {
+    // просто не показываем отчеты
+  }
+}
+
 function renderCalendarPlanList() {
   const list = document.getElementById('calendar-plan-list');
   if (!list) return;
@@ -2055,12 +2108,27 @@ function renderCalendarPlanList() {
     list.innerHTML = `<div class="calendar-plan-empty">${calendarSelectedDate ? `На ${formatDateLabelRu(calendarSelectedDate)} ничего не запланировано` : 'Выбери дату'}</div>`;
     return;
   }
-  list.innerHTML = items.map(s => `
-    <div class="calendar-plan-item" onclick="${isAdmin() ? `editScenario(${s.id})` : ''}" style="${isAdmin() ? 'cursor:pointer;' : ''}">
-      <div style="font-weight:700;">${escapeHtml(s.title || 'Без названия')}</div>
-      ${s.hero ? `<div style="margin-top:3px;font-size:11px;color:var(--muted);">${escapeHtml(s.hero)}</div>` : ''}
-    </div>
-  `).join('');
+  const past = isPastDate(calendarSelectedDate);
+  list.innerHTML = items.map(s => {
+    const res = calendarResults[s.id];
+    const hasLink = res && res.ig_url;
+    const imgCount = res && res.images ? res.images.length : 0;
+    const line2 = s.hero ? escapeHtml(s.hero) : '';
+    const reportLine = past
+      ? `<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+           ${hasLink ? `<a href="${escapeAttr(res.ig_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:11px;font-weight:800;text-decoration:underline">Ролик</a>` : `<span style="font-size:11px;color:var(--muted);font-weight:800">Без ссылки</span>`}
+           <span style="font-size:11px;color:var(--muted);font-weight:800">Скрины: ${imgCount}</span>
+           <button class="media-action-btn" style="padding:6px 10px" onclick="openResultModal(event,${s.id})">Отчет</button>
+         </div>`
+      : '';
+    return `
+      <div class="calendar-plan-item" onclick="${isAdmin() ? `editScenario(${s.id})` : ''}" style="${isAdmin() ? 'cursor:pointer;' : ''}">
+        <div style="font-weight:700;">${escapeHtml(s.title || 'Без названия')}</div>
+        ${line2 ? `<div style="margin-top:3px;font-size:11px;color:var(--muted);">${line2}</div>` : ''}
+        ${reportLine}
+      </div>
+    `;
+  }).join('');
 }
 
 function renderCalendar() {
@@ -2101,7 +2169,10 @@ function renderCalendar() {
 
 function selectCalendarDate(dateStr) {
   calendarSelectedDate = dateStr;
-  renderCalendar();
+  // Если дата прошедшая — подгружаем отчеты по этой дате
+  loadCalendarResultsForDate(calendarSelectedDate).finally(() => {
+    renderCalendar();
+  });
 }
 
 function changeCalendarMonth(delta) {
@@ -2201,6 +2272,121 @@ function closeCalendarPick() {
 
 function closeCalendarPickOutside(e) {
   if (e.target === document.getElementById('calendar-pick-overlay')) closeCalendarPick();
+}
+
+// ── ОТЧЕТ (прошедшие даты) ──
+function openResultModal(ev, scenarioId) {
+  // чтобы клик по кнопке не открывал редактирование сценария
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  if (!calendarSelectedDate || !isPastDate(calendarSelectedDate)) {
+    showToast('Отчет доступен для прошедших дат');
+    return;
+  }
+  editingResultScenarioId = scenarioId;
+  const res = calendarResults[scenarioId] || null;
+  editingResultId = res ? res.id : null;
+  pendingResultImages = res && res.images ? [...res.images] : [];
+
+  document.getElementById('result-title').textContent = `Отчет · ${formatDateLabelRu(calendarSelectedDate)}`;
+  document.getElementById('result-ig-url').value = res && res.ig_url ? res.ig_url : '';
+  renderResultThumbs();
+  const overlay = document.getElementById('result-overlay');
+  if (overlay) overlay.classList.add('open');
+}
+
+function closeResultModal() {
+  const overlay = document.getElementById('result-overlay');
+  if (overlay) overlay.classList.remove('open');
+  editingResultScenarioId = null;
+  editingResultId = null;
+  pendingResultImages = [];
+  const q = document.getElementById('result-upload-queue');
+  if (q) { q.innerHTML = ''; q.style.display = 'none'; }
+}
+
+function closeResultModalOutside(e) {
+  if (e.target === document.getElementById('result-overlay')) closeResultModal();
+}
+
+function renderResultThumbs() {
+  const el = document.getElementById('result-thumbs');
+  if (!el) return;
+  if (!pendingResultImages || pendingResultImages.length === 0) {
+    el.innerHTML = `<div style="color:var(--muted);font-size:12px">Скриншотов пока нет</div>`;
+    return;
+  }
+  el.innerHTML = pendingResultImages.map((url, idx) => `
+    <div style="position:relative;flex-shrink:0">
+      <img src="${escapeAttr(url)}" style="width:72px;height:72px;border-radius:10px;object-fit:cover;border:1.5px solid var(--border)" onclick="openLightbox('${escapeAttr(url)}')">
+      <button onclick="removeResultImage(event,${idx})" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:2px solid #fff;background:#c0392b;color:#fff;cursor:pointer;line-height:1">×</button>
+    </div>
+  `).join('');
+}
+
+function removeResultImage(ev, idx) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  pendingResultImages.splice(idx, 1);
+  renderResultThumbs();
+}
+
+async function handleResultFiles(e) {
+  const files = Array.from(e.target.files || []);
+  e.target.value = '';
+  if (files.length === 0) return;
+  const queueEl = document.getElementById('result-upload-queue');
+  if (queueEl) { queueEl.style.display = 'flex'; }
+
+  for (const file of files) {
+    const maxBytes = 50 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      showToast('Файл больше 50MB — на Free не загрузится');
+      continue;
+    }
+    const localId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    if (queueEl) queueEl.insertAdjacentHTML('beforeend', buildUploadRowHtml(localId, file.name));
+    try {
+      const url = await uploadFileToBucketWithProgress(file, BUCKET_MEDIA, (pct) => {
+        const bar = document.getElementById(`upload-bar-${localId}`);
+        const hint = document.getElementById(`upload-hint-${localId}`);
+        if (bar) bar.style.width = `${pct}%`;
+        if (hint) hint.textContent = `Загрузка: ${pct}%`;
+      });
+      pendingResultImages.push(url);
+      renderResultThumbs();
+      const hint = document.getElementById(`upload-hint-${localId}`);
+      if (hint) hint.textContent = 'Готово';
+    } catch (err) {
+      const hint = document.getElementById(`upload-hint-${localId}`);
+      if (hint) hint.textContent = 'Ошибка';
+      showToast('Ошибка загрузки');
+    }
+  }
+}
+
+async function saveResult() {
+  if (!editingResultScenarioId || !currentProjectId || !calendarSelectedDate) return;
+  const igUrl = (document.getElementById('result-ig-url').value || '').trim();
+  const payload = {
+    project_id: currentProjectId,
+    scenario_id: editingResultScenarioId,
+    date: calendarSelectedDate,
+    ig_url: igUrl || null,
+    images: JSON.stringify(pendingResultImages || [])
+  };
+  try {
+    if (editingResultId) {
+      await api(`/rest/v1/scenario_results?id=eq.${editingResultId}`, 'PATCH', payload);
+    } else {
+      const created = await api('/rest/v1/scenario_results', 'POST', payload);
+      if (created && created[0]) editingResultId = created[0].id;
+    }
+    calendarResults[editingResultScenarioId] = { id: editingResultId || (calendarResults[editingResultScenarioId] ? calendarResults[editingResultScenarioId].id : null), ig_url: igUrl, images: [...(pendingResultImages || [])] };
+    renderCalendarPlanList();
+    closeResultModal();
+    showToast('Отчет сохранен');
+  } catch (e) {
+    showToast('Не удалось сохранить отчет');
+  }
 }
 
 // ── МЕДИАТЕКА (стоки) ──
