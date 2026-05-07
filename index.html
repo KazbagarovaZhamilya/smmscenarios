@@ -2376,6 +2376,8 @@ function renderCalendarPlanList() {
 function editScenarioFromCalendar(ev, id) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   if (!isAdmin()) return;
+  // Календарь — отдельный fullscreen-слой. Если его не закрыть, окно сценария может открыться "под ним".
+  closeCalendarModal(true);
   editScenario(id);
 }
 
