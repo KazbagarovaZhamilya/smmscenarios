@@ -1267,11 +1267,9 @@ let selectedScenarioIds = new Set();
 const LS_PROJECTS_KEY = 'iritual_projects_cache_v1';
 const LS_SCENARIOS_KEY = 'iritual_scenarios_cache_v1';
 const LS_OFFLINE_QUEUE_KEY = 'iritual_offline_queue_v1';
-const LS_RELEASE_PLAN_KEY = 'iritual_release_plan_v1';
 let scenariosByProjectCache = {};
 let offlineQueue = [];
 let syncingOfflineQueue = false;
-let releasePlanByProject = {};
 let calendarCurrentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let calendarSelectedDate = '';
 let calendarPickDate = ''; // дата, для которой сейчас выбираем сценарий через "+"
@@ -1295,7 +1293,10 @@ function loadOfflineState() {
   try { projects = JSON.parse(localStorage.getItem(LS_PROJECTS_KEY) || '[]') || []; } catch(e) { projects = []; }
   try { scenariosByProjectCache = JSON.parse(localStorage.getItem(LS_SCENARIOS_KEY) || '{}') || {}; } catch(e) { scenariosByProjectCache = {}; }
   try { offlineQueue = JSON.parse(localStorage.getItem(LS_OFFLINE_QUEUE_KEY) || '[]') || []; } catch(e) { offlineQueue = []; }
-  try { releasePlanByProject = JSON.parse(localStorage.getItem(LS_RELEASE_PLAN_KEY) || '{}') || {}; } catch(e) { releasePlanByProject = {}; }
+  // Раньше даты в календаре хранились в localStorage (LS_RELEASE_PLAN_KEY).
+  // Теперь даты синхронизируются через Supabase поле scenarios.release_date,
+  // поэтому старый ключ удаляем, чтобы не плодить "мусор".
+  try { localStorage.removeItem('iritual_release_plan_v1'); } catch(e) {}
 }
 
 function persistProjectsCache() {
@@ -1309,10 +1310,6 @@ function persistScenariosCache() {
 
 function saveOfflineQueue() {
   localStorage.setItem(LS_OFFLINE_QUEUE_KEY, JSON.stringify(offlineQueue));
-}
-
-function persistReleasePlan() {
-  localStorage.setItem(LS_RELEASE_PLAN_KEY, JSON.stringify(releasePlanByProject));
 }
 
 function enqueueOfflineOp(op) {
