@@ -1818,7 +1818,17 @@ function openScenarioModal(options = {}) {
   if (!options.fromEdit) restoreScenarioDraft();
 }
 
-function closeScenarioModal(preserveDraft = true) {
+function closeScenarioModal(preserveDraft = true, fromPopState = false) {
+  // На телефоне кнопка "назад" должна закрывать текущее окно на 1 шаг.
+  // Поэтому при закрытии через UI делаем history.back(), а реальное закрытие делаем в обработчике popstate.
+  const overlay = document.getElementById('scenario-overlay');
+  if (!fromPopState && overlay && overlay.classList.contains('open')) {
+    if (preserveDraft) saveScenarioDraft();
+    clearTimeout(draftAutosaveTimer);
+    history.back();
+    return;
+  }
+
   const savedDraft = preserveDraft ? saveScenarioDraft() : false;
   clearTimeout(draftAutosaveTimer);
   document.getElementById('scenario-overlay').classList.remove('open');
@@ -1841,12 +1851,21 @@ function closeScenarioModal(preserveDraft = true) {
 }
 
 window.addEventListener('popstate', () => {
-  if (document.getElementById('text-editor-overlay').classList.contains('open')) {
-    closeTextEditor();
+  // Закрываем самый верхний "слой" (как стек), чтобы "назад" не уносил в начало.
+  if (document.getElementById('lightbox').classList.contains('open')) {
+    closeLightbox(true);
+  } else if (document.getElementById('calendar-pick-overlay').classList.contains('open')) {
+    closeCalendarPick();
+  } else if (document.getElementById('result-overlay') && document.getElementById('result-overlay').classList.contains('open')) {
+    closeResultModal(true);
+  } else if (document.getElementById('media-overlay') && document.getElementById('media-overlay').classList.contains('open')) {
+    closeMediaModal(true);
+  } else if (document.getElementById('text-editor-overlay').classList.contains('open')) {
+    closeTextEditor(true);
   } else if (document.getElementById('calendar-overlay').classList.contains('open')) {
-    closeCalendarModal();
+    closeCalendarModal(true);
   } else if (document.getElementById('scenario-overlay').classList.contains('open')) {
-    closeScenarioModal();
+    closeScenarioModal(true, true);
   } else if (document.getElementById('lightbox').classList.contains('open')) {
     closeLightbox(true);
   }
@@ -2068,7 +2087,12 @@ function openTextEditor() {
   setTimeout(() => document.getElementById('inp-desc').focus(), 100);
 }
 
-function closeTextEditor() {
+function closeTextEditor(fromPopState = false) {
+  const overlay = document.getElementById('text-editor-overlay');
+  if (!fromPopState && overlay && overlay.classList.contains('open')) {
+    history.back();
+    return;
+  }
   document.getElementById('text-editor-overlay').classList.remove('open');
   const val = document.getElementById('inp-desc').value;
   const preview = document.getElementById('desc-preview');
@@ -2217,7 +2241,12 @@ function openCalendarModal() {
   renderCalendar();
 }
 
-function closeCalendarModal() {
+function closeCalendarModal(fromPopState = false) {
+  const overlay = document.getElementById('calendar-overlay');
+  if (!fromPopState && overlay && overlay.classList.contains('open')) {
+    history.back();
+    return;
+  }
   document.getElementById('calendar-overlay').classList.remove('open');
 }
 
@@ -2226,6 +2255,9 @@ function openCalendarScenarioPicker(ev, dateStr) {
   // Не даём клику по "+" сработать как "выбрать дату"
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   if (!isAdmin()) return;
+
+  // отдельный шаг истории, чтобы кнопка "назад" закрывала этот список
+  history.pushState({ modal: 'calendar_pick' }, '');
 
   calendarPickDate = dateStr;
   const overlay = document.getElementById('calendar-pick-overlay');
@@ -2290,14 +2322,18 @@ function pickScenarioForCalendarDate(scenarioId) {
   showToast('Запланировано');
 }
 
-function closeCalendarPick() {
+function closeCalendarPick(fromPopState = false) {
   const overlay = document.getElementById('calendar-pick-overlay');
+  if (!fromPopState && overlay && overlay.classList.contains('open')) {
+    history.back();
+    return;
+  }
   if (overlay) overlay.classList.remove('open');
   calendarPickDate = '';
 }
 
 function closeCalendarPickOutside(e) {
-  if (e.target === document.getElementById('calendar-pick-overlay')) closeCalendarPick();
+  if (e.target === document.getElementById('calendar-pick-overlay')) closeCalendarPick(false);
 }
 
 // ── ОТЧЕТ (прошедшие даты) ──
@@ -2308,6 +2344,10 @@ function openResultModal(ev, scenarioId) {
     showToast('Отчет доступен для прошедших дат');
     return;
   }
+
+  // отдельный шаг истории, чтобы кнопка "назад" закрывала окно отчета
+  history.pushState({ modal: 'result' }, '');
+
   editingResultScenarioId = scenarioId;
   const res = calendarResults[scenarioId] || null;
   editingResultId = res ? res.id : null;
@@ -2321,8 +2361,12 @@ function openResultModal(ev, scenarioId) {
   if (overlay) overlay.classList.add('open');
 }
 
-function closeResultModal() {
+function closeResultModal(fromPopState = false) {
   const overlay = document.getElementById('result-overlay');
+  if (!fromPopState && overlay && overlay.classList.contains('open')) {
+    history.back();
+    return;
+  }
   if (overlay) overlay.classList.remove('open');
   editingResultScenarioId = null;
   editingResultId = null;
@@ -2334,7 +2378,7 @@ function closeResultModal() {
 }
 
 function closeResultModalOutside(e) {
-  if (e.target === document.getElementById('result-overlay')) closeResultModal();
+  if (e.target === document.getElementById('result-overlay')) closeResultModal(false);
 }
 
 function renderResultThumbs() {
@@ -2429,12 +2473,17 @@ async function saveResult() {
 function openMediaModal() {
   const overlay = document.getElementById('media-overlay');
   if (!overlay) return;
+  history.pushState({ modal: 'media' }, '');
   overlay.classList.add('open');
   loadMediaLibrary();
 }
 
-function closeMediaModal() {
+function closeMediaModal(fromPopState = false) {
   const overlay = document.getElementById('media-overlay');
+  if (!fromPopState && overlay && overlay.classList.contains('open')) {
+    history.back();
+    return;
+  }
   if (overlay) overlay.classList.remove('open');
   const q = document.getElementById('media-search');
   if (q) q.value = '';
@@ -2443,7 +2492,7 @@ function closeMediaModal() {
 }
 
 function closeMediaModalOutside(e) {
-  if (e.target === document.getElementById('media-overlay')) closeMediaModal();
+  if (e.target === document.getElementById('media-overlay')) closeMediaModal(false);
 }
 
 async function loadMediaLibrary() {
