@@ -419,17 +419,29 @@
   }
 
   /* Мини-превью опубликованного ролика в клетке календаря */
-  .calendar-pub-thumb {
+  .calendar-pub-bg {
     position: absolute;
-    left: 4px;
-    bottom: 4px;
-    width: 18px;
-    height: 18px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--surface2);
-    object-fit: cover;
-    display: block;
+    inset: 3px;
+    border-radius: 8px;
+    background-size: cover;
+    background-position: center;
+    filter: saturate(1.05) contrast(1.02);
+    opacity: 0.92;
+    pointer-events: none;
+  }
+  .calendar-pub-overlay {
+    position: absolute;
+    inset: 3px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(254,252,247,0.95) 0%, rgba(254,252,247,0.35) 55%, rgba(254,252,247,0.05) 100%);
+    pointer-events: none;
+  }
+  .calendar-day-num {
+    position: relative;
+    z-index: 1;
+  }
+  .calendar-dot, .calendar-add-btn {
+    z-index: 2;
   }
 
   /* Серый "плюсик" на пустых датах (для быстрого планирования) */
@@ -2358,7 +2370,7 @@ function renderCalendar() {
            onkeydown="if(event.key==='Enter'||event.key===' '){selectCalendarDate('${dateStr}')}">
         <span class="calendar-day-num">${d}</span>
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
-        ${pubImg ? `<img class="calendar-pub-thumb" src="${escapeAttr(pubImg)}" alt="" />` : ''}
+        ${pubImg ? `<div class="calendar-pub-bg" style="background-image:url('${escapeAttr(pubImg)}')"></div><div class="calendar-pub-overlay"></div>` : ''}
         ${showPlus ? (isPast
           ? `<button type="button" class="calendar-add-btn" onclick="openDayResultModalForDate(event,'${dateStr}')">+</button>`
           : `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>`
