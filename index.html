@@ -1166,6 +1166,7 @@ let calendarCurrentMonth = new Date(new Date().getFullYear(), new Date().getMont
 let calendarSelectedDate = '';
 let calendarPickDate = ''; // дата, для которой сейчас выбираем сценарий через "+"
 let mediaLibrary = []; // список медиа из Supabase таблицы (общий для всех устройств)
+let mediaFilter = 'all'; // all | pending | approved
 
 function isNetworkError(e) {
   const msg = (e && e.message ? e.message : String(e || '')).toLowerCase();
@@ -2204,7 +2205,6 @@ function closeCalendarPickOutside(e) {
 
 // ── МЕДИАТЕКА (стоки) ──
 function openMediaModal() {
-  if (!isAdmin()) { showToast('Только для админа'); return; }
   const overlay = document.getElementById('media-overlay');
   if (!overlay) return;
   overlay.classList.add('open');
@@ -2236,6 +2236,11 @@ async function loadMediaLibrary() {
   renderMediaList();
 }
 
+function setMediaFilter(next) {
+  mediaFilter = next;
+  renderMediaList();
+}
+
 function getMediaSearchQuery() {
   const input = document.getElementById('media-search');
   return input ? input.value.trim().toLowerCase() : '';
@@ -2245,17 +2250,41 @@ function renderMediaList() {
   const el = document.getElementById('media-list');
   if (!el) return;
   const q = getMediaSearchQuery();
-  const list = (mediaLibrary || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const list = (mediaLibrary || []).slice().sort((a, b) => {
+    const ta = a.created_at ? new Date(a.created_at).getTime() : (a.createdAt || 0);
+    const tb = b.created_at ? new Date(b.created_at).getTime() : (b.createdAt || 0);
+    return tb - ta;
+  });
+
+  const byStatus = list.filter(x => {
+    const approved = !!x.approved;
+    if (mediaFilter === 'approved') return approved;
+    if (mediaFilter === 'pending') return !approved;
+    return true;
+  });
+
   const filtered = q
-    ? list.filter(x => (x.name || '').toLowerCase().includes(q) || (x.tags || '').toLowerCase().includes(q))
-    : list;
+    ? byStatus.filter(x =>
+        (x.name || '').toLowerCase().includes(q) ||
+        (x.tags || '').toLowerCase().includes(q) ||
+        (x.kind || '').toLowerCase().includes(q)
+      )
+    : byStatus;
 
   if (filtered.length === 0) {
-    el.innerHTML = `<div class="calendar-plan-empty">Пока пусто. Нажми “+ Загрузить”.</div>`;
+    el.innerHTML = `<div class="calendar-plan-empty">Пока пусто.</div>`;
     return;
   }
 
-  el.innerHTML = filtered.map(item => {
+  const filterRow = `
+    <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+      <button class="media-action-btn" style="${mediaFilter==='all'?'border-color:var(--accent);color:var(--accent);background:#fdf3ec':''}" onclick="setMediaFilter('all')">Все</button>
+      <button class="media-action-btn" style="${mediaFilter==='pending'?'border-color:var(--accent);color:var(--accent);background:#fdf3ec':''}" onclick="setMediaFilter('pending')">На проверке</button>
+      <button class="media-action-btn" style="${mediaFilter==='approved'?'border-color:var(--accent);color:var(--accent);background:#fdf3ec':''}" onclick="setMediaFilter('approved')">Approved</button>
+    </div>
+  `;
+
+  el.innerHTML = filterRow + filtered.map(item => {
     const type = item.type || '';
     const isVideo = type.startsWith('video/');
     const thumb = isVideo
@@ -2263,17 +2292,26 @@ function renderMediaList() {
       : `<div class="media-thumb"><img src="${escapeAttr(item.url)}" onerror="this.parentNode.textContent='IMG'"></div>`;
     const tags = item.tags ? escapeHtml(item.tags) : 'Без тегов';
     const name = escapeHtml(item.name || 'Без названия');
+    const kind = item.kind ? escapeHtml(item.kind) : 'без типа';
+    const approved = !!item.approved;
+    const statusLine = approved
+      ? `<span style="display:inline-flex;align-items:center;gap:6px;color:#5a9e5a;font-weight:800;font-size:11px;">✅ approved</span>`
+      : `<span style="display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-weight:800;font-size:11px;">⏳ на проверке</span>`;
     return `
       <div class="media-item">
         ${thumb}
         <div class="media-meta">
           <div class="media-name">${name}</div>
-          <div class="media-tags">${tags}</div>
+          <div class="media-tags">${statusLine} · ${kind} · ${tags}</div>
         </div>
         <div class="media-actions">
           <button class="media-action-btn" onclick="useMediaItem('${escapeAttr(item.id)}')">В сценарий</button>
           <button class="media-action-btn" onclick="editMediaTags('${escapeAttr(item.id)}')">Теги</button>
-          <button class="media-action-btn danger" onclick="deleteMediaItem('${escapeAttr(item.id)}')">Удалить</button>
+          <button class="media-action-btn" onclick="editMediaKind('${escapeAttr(item.id)}')">Тип</button>
+          ${isAdmin()
+            ? `<button class="media-action-btn" onclick="approveMediaItem('${escapeAttr(item.id)}')" style="${approved?'opacity:0.5;pointer-events:none;':''}">✅</button>
+               <button class="media-action-btn danger" onclick="deleteMediaItem('${escapeAttr(item.id)}')">Удалить</button>`
+            : ``}
         </div>
       </div>
     `;
@@ -2324,7 +2362,9 @@ async function handleMediaFiles(e) {
         url,
         type: file.type || 'application/octet-stream',
         name: (file.name || 'Медиа').replace(/\.[^/.]+$/, ''),
-        tags: ''
+        tags: '',
+        kind: '',
+        approved: false
       };
       const created = await api('/rest/v1/media_items', 'POST', payload);
       // Supabase возвращает массив
@@ -2407,6 +2447,42 @@ function editMediaTags(id) {
       showToast('Теги сохранены');
     } catch (e) {
       showToast('Не удалось сохранить теги');
+    }
+  })();
+}
+
+function editMediaKind(id) {
+  const item = (mediaLibrary || []).find(x => String(x.id) === String(id));
+  const current = item && item.kind ? item.kind : '';
+  const next = prompt('Тип материала (например: reels, stories, пост):', current);
+  if (next === null) return;
+  const cleaned = String(next).trim();
+  (async () => {
+    try {
+      await api(`/rest/v1/media_items?id=eq.${encodeURIComponent(id)}`, 'PATCH', { kind: cleaned });
+      if (item) item.kind = cleaned;
+      renderMediaList();
+      showToast('Тип сохранён');
+    } catch (e) {
+      showToast('Не удалось сохранить тип');
+    }
+  })();
+}
+
+function approveMediaItem(id) {
+  if (!isAdmin()) return;
+  const item = (mediaLibrary || []).find(x => String(x.id) === String(id));
+  if (!item) return;
+  if (item.approved) return;
+  (async () => {
+    try {
+      await api(`/rest/v1/media_items?id=eq.${encodeURIComponent(id)}`, 'PATCH', { approved: true, approved_at: new Date().toISOString() });
+      item.approved = true;
+      item.approved_at = new Date().toISOString();
+      renderMediaList();
+      showToast('Approved');
+    } catch (e) {
+      showToast('Не удалось апрувнуть');
     }
   })();
 }
@@ -2732,7 +2808,6 @@ function applyRole() {
     // Hide all edit controls
     document.getElementById('fab').style.display = 'none';
     document.querySelectorAll('.nav-add-project').forEach(el => el.style.display = 'none');
-    document.querySelectorAll('.nav-media').forEach(el => el.style.display = 'none');
   }
 }
 
