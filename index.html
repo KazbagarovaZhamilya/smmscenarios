@@ -696,6 +696,121 @@
     color: #c0392b;
   }
 
+  /* ── MEDIA LIBRARY (стоки) ── */
+  .nav-media {
+    width: 46px; border: none;
+    background: transparent; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; color: var(--muted); flex-shrink: 0; transition: color 0.2s;
+  }
+  .nav-media:hover { color: var(--accent); }
+
+  .media-topbar { display: flex; gap: 8px; align-items: center; }
+  .media-search {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1.5px solid var(--border);
+    background: var(--surface2);
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    outline: none;
+  }
+  .media-upload-btn {
+    border: 1.5px solid var(--border);
+    background: var(--surface2);
+    color: var(--text2);
+    border-radius: 12px;
+    padding: 10px 12px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .media-item {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    border: 1.5px solid var(--border);
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 10px;
+  }
+  .media-thumb {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-weight: 800;
+    font-size: 11px;
+  }
+  .media-thumb img, .media-thumb video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .media-meta { flex: 1; min-width: 0; }
+  .media-name {
+    font-weight: 800;
+    font-size: 13px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .media-tags {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .media-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+  .media-action-btn {
+    border: 1.5px solid var(--border);
+    background: var(--surface2);
+    color: var(--text2);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 11px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .media-action-btn.danger {
+    border-color: #e8c4c4;
+    background: #fdf5f5;
+    color: #c0392b;
+  }
+  .upload-row {
+    border: 1.5px dashed var(--border);
+    background: var(--surface);
+    border-radius: 14px;
+    padding: 10px 12px;
+  }
+  .upload-title { font-weight: 800; font-size: 12px; color: var(--text2); }
+  .upload-progress {
+    margin-top: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .upload-progress > div {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+  }
+  .upload-hint { margin-top: 6px; font-size: 11px; color: var(--muted); }
+
   .no-project {
     display: flex; flex-direction: column; align-items: center;
     justify-content: center; padding: 80px 30px; text-align: center; gap: 16px;
@@ -797,6 +912,13 @@
         <line x1="16" y1="2" x2="16" y2="6"></line>
         <line x1="8" y1="2" x2="8" y2="6"></line>
         <line x1="3" y1="10" x2="21" y2="10"></line>
+      </svg>
+    </button>
+    <button class="nav-media" onclick="openMediaModal()" title="Медиатека">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="3"></rect>
+        <path d="M7 16l3-3 3 3 4-4"></path>
+        <circle cx="8" cy="8" r="1.2"></circle>
       </svg>
     </button>
   </div>
@@ -923,6 +1045,27 @@
   </div>
 </div>
 
+<!-- Медиатека (стоки): фото/видео (на Free плане до 50MB на файл) -->
+<div class="proj-overlay" id="media-overlay" onclick="closeMediaModalOutside(event)">
+  <div class="proj-modal" style="padding-bottom:26px">
+    <div class="modal-handle"></div>
+    <div class="proj-title">Медиатека</div>
+
+    <div class="media-topbar">
+      <input class="media-search" id="media-search" placeholder="Поиск по названию и тегам..." oninput="renderMediaList()">
+      <button class="media-upload-btn" onclick="document.getElementById('media-file-input').click()">+ Загрузить</button>
+      <input type="file" id="media-file-input" accept="image/*,video/*" style="display:none" multiple onchange="handleMediaFiles(event)">
+    </div>
+
+    <div id="media-upload-queue" style="margin-top:10px;display:none;flex-direction:column;gap:8px"></div>
+    <div id="media-list" style="margin-top:10px;display:flex;flex-direction:column;gap:8px"></div>
+
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-cancel" onclick="closeMediaModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
 <!-- Project Modal (bottom sheet) -->
 <div class="proj-overlay" id="project-overlay" onclick="closeProjectModalOutside(event)">
   <div class="proj-modal">
@@ -1015,6 +1158,7 @@ const LS_PROJECTS_KEY = 'iritual_projects_cache_v1';
 const LS_SCENARIOS_KEY = 'iritual_scenarios_cache_v1';
 const LS_OFFLINE_QUEUE_KEY = 'iritual_offline_queue_v1';
 const LS_RELEASE_PLAN_KEY = 'iritual_release_plan_v1';
+const LS_MEDIA_LIBRARY_KEY = 'iritual_media_library_v1';
 let scenariosByProjectCache = {};
 let offlineQueue = [];
 let syncingOfflineQueue = false;
@@ -1022,6 +1166,7 @@ let releasePlanByProject = {};
 let calendarCurrentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let calendarSelectedDate = '';
 let calendarPickDate = ''; // дата, для которой сейчас выбираем сценарий через "+"
+let mediaLibrary = []; // { id, url, type, name, tags, createdAt }
 
 function isNetworkError(e) {
   const msg = (e && e.message ? e.message : String(e || '')).toLowerCase();
@@ -1033,6 +1178,7 @@ function loadOfflineState() {
   try { scenariosByProjectCache = JSON.parse(localStorage.getItem(LS_SCENARIOS_KEY) || '{}') || {}; } catch(e) { scenariosByProjectCache = {}; }
   try { offlineQueue = JSON.parse(localStorage.getItem(LS_OFFLINE_QUEUE_KEY) || '[]') || []; } catch(e) { offlineQueue = []; }
   try { releasePlanByProject = JSON.parse(localStorage.getItem(LS_RELEASE_PLAN_KEY) || '{}') || {}; } catch(e) { releasePlanByProject = {}; }
+  try { mediaLibrary = JSON.parse(localStorage.getItem(LS_MEDIA_LIBRARY_KEY) || '[]') || []; } catch(e) { mediaLibrary = []; }
 }
 
 function persistProjectsCache() {
@@ -1050,6 +1196,10 @@ function saveOfflineQueue() {
 
 function persistReleasePlan() {
   localStorage.setItem(LS_RELEASE_PLAN_KEY, JSON.stringify(releasePlanByProject));
+}
+
+function persistMediaLibrary() {
+  localStorage.setItem(LS_MEDIA_LIBRARY_KEY, JSON.stringify(mediaLibrary));
 }
 
 function enqueueOfflineOp(op) {
@@ -1112,6 +1262,37 @@ async function api(path, method = 'GET', body = null) {
   if (!res.ok) throw new Error(await res.text());
   const text = await res.text();
   return text ? JSON.parse(text) : null;
+}
+
+// Загрузка файла с прогрессом (для фото/видео).
+// Важно: на Free плане Supabase максимум 50MB на файл.
+function uploadFileToBucketWithProgress(file, bucketName, onProgress) {
+  return new Promise((resolve, reject) => {
+    const ext = (file.name || '').split('.').pop() || 'bin';
+    const name = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+    const url = `${SUPABASE_URL}/storage/v1/object/${bucketName}/${name}`;
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('apikey', SUPABASE_KEY);
+    xhr.setRequestHeader('Authorization', `Bearer ${SUPABASE_KEY}`);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+    xhr.upload.onprogress = (e) => {
+      if (!e.lengthComputable) return;
+      const pct = Math.round((e.loaded / e.total) * 100);
+      if (onProgress) onProgress(pct, e.loaded, e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(`${SUPABASE_URL}/storage/v1/object/public/${bucketName}/${name}`);
+      } else {
+        reject(new Error(xhr.responseText || `Upload failed (${xhr.status})`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Upload failed'));
+    xhr.send(file);
+  });
 }
 
 async function init() {
@@ -2027,6 +2208,169 @@ function closeCalendarPickOutside(e) {
   if (e.target === document.getElementById('calendar-pick-overlay')) closeCalendarPick();
 }
 
+// ── МЕДИАТЕКА (стоки) ──
+function openMediaModal() {
+  if (!isAdmin()) { showToast('Только для админа'); return; }
+  const overlay = document.getElementById('media-overlay');
+  if (!overlay) return;
+  overlay.classList.add('open');
+  renderMediaList();
+}
+
+function closeMediaModal() {
+  const overlay = document.getElementById('media-overlay');
+  if (overlay) overlay.classList.remove('open');
+  const q = document.getElementById('media-search');
+  if (q) q.value = '';
+  const queue = document.getElementById('media-upload-queue');
+  if (queue) { queue.innerHTML = ''; queue.style.display = 'none'; }
+}
+
+function closeMediaModalOutside(e) {
+  if (e.target === document.getElementById('media-overlay')) closeMediaModal();
+}
+
+function getMediaSearchQuery() {
+  const input = document.getElementById('media-search');
+  return input ? input.value.trim().toLowerCase() : '';
+}
+
+function renderMediaList() {
+  const el = document.getElementById('media-list');
+  if (!el) return;
+  const q = getMediaSearchQuery();
+  const list = (mediaLibrary || []).slice().sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+  const filtered = q
+    ? list.filter(x => (x.name || '').toLowerCase().includes(q) || (x.tags || '').toLowerCase().includes(q))
+    : list;
+
+  if (filtered.length === 0) {
+    el.innerHTML = `<div class="calendar-plan-empty">Пока пусто. Нажми “+ Загрузить”.</div>`;
+    return;
+  }
+
+  el.innerHTML = filtered.map(item => {
+    const type = item.type || '';
+    const isVideo = type.startsWith('video/');
+    const thumb = isVideo
+      ? `<div class="media-thumb"><video src="${escapeAttr(item.url)}" muted playsinline></video></div>`
+      : `<div class="media-thumb"><img src="${escapeAttr(item.url)}" onerror="this.parentNode.textContent='IMG'"></div>`;
+    const tags = item.tags ? escapeHtml(item.tags) : 'Без тегов';
+    const name = escapeHtml(item.name || 'Без названия');
+    return `
+      <div class="media-item">
+        ${thumb}
+        <div class="media-meta">
+          <div class="media-name">${name}</div>
+          <div class="media-tags">${tags}</div>
+        </div>
+        <div class="media-actions">
+          <button class="media-action-btn" onclick="useMediaItem('${escapeAttr(item.id)}')">В сценарий</button>
+          <button class="media-action-btn danger" onclick="deleteMediaItem('${escapeAttr(item.id)}')">Удалить</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function buildUploadRowHtml(localId, fileName) {
+  const safeName = escapeHtml(fileName || 'Файл');
+  return `
+    <div class="upload-row" id="upload-row-${localId}">
+      <div class="upload-title">${safeName}</div>
+      <div class="upload-progress"><div id="upload-bar-${localId}"></div></div>
+      <div class="upload-hint" id="upload-hint-${localId}">Загрузка: 0%</div>
+    </div>
+  `;
+}
+
+async function handleMediaFiles(e) {
+  const files = Array.from(e.target.files || []);
+  e.target.value = '';
+  if (files.length === 0) return;
+
+  const queueEl = document.getElementById('media-upload-queue');
+  if (queueEl) { queueEl.style.display = 'flex'; }
+
+  for (const file of files) {
+    // Защита: на Free плане максимум 50MB на файл
+    const maxBytes = 50 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      showToast('Файл больше 50MB — на Free не загрузится');
+      continue;
+    }
+
+    const localId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    if (queueEl) queueEl.insertAdjacentHTML('beforeend', buildUploadRowHtml(localId, file.name));
+
+    try {
+      const url = await uploadFileToBucketWithProgress(file, BUCKET_MEDIA, (pct) => {
+        const bar = document.getElementById(`upload-bar-${localId}`);
+        const hint = document.getElementById(`upload-hint-${localId}`);
+        if (bar) bar.style.width = `${pct}%`;
+        if (hint) hint.textContent = `Загрузка: ${pct}%`;
+      });
+
+      // Сохраняем в локальный каталог медиатеки
+      const item = {
+        id: localId,
+        url,
+        type: file.type || 'application/octet-stream',
+        name: (file.name || 'Медиа').replace(/\.[^/.]+$/, ''),
+        tags: '',
+        createdAt: Date.now()
+      };
+      mediaLibrary.unshift(item);
+      persistMediaLibrary();
+      renderMediaList();
+
+      const hint = document.getElementById(`upload-hint-${localId}`);
+      if (hint) hint.textContent = 'Готово';
+      showToast('Загружено');
+    } catch (err) {
+      const hint = document.getElementById(`upload-hint-${localId}`);
+      if (hint) hint.textContent = 'Ошибка загрузки';
+      showToast('Ошибка загрузки');
+      console.error(err);
+    }
+  }
+}
+
+function useMediaItem(id) {
+  const item = (mediaLibrary || []).find(x => x.id === id);
+  if (!item) return;
+
+  // Если открыт сценарий — вставляем ссылку в описание (самый простой вариант)
+  const scenarioOverlay = document.getElementById('scenario-overlay');
+  const isScenarioOpen = scenarioOverlay && scenarioOverlay.classList.contains('open');
+  if (isScenarioOpen) {
+    const descEl = document.getElementById('inp-desc');
+    const preview = document.getElementById('desc-preview');
+    const before = descEl.value || '';
+    const sep = before.trim().length > 0 ? '\n' : '';
+    descEl.value = `${before}${sep}${item.url}`;
+    if (preview) {
+      preview.textContent = descEl.value || 'Нажми чтобы добавить описание...';
+      preview.style.color = descEl.value ? 'var(--text)' : 'var(--muted)';
+    }
+    queueScenarioDraftAutosave();
+    showToast('Добавлено в сценарий');
+    closeMediaModal();
+    return;
+  }
+
+  // Если сценарий не открыт — копируем ссылку
+  navigator.clipboard.writeText(item.url).then(() => showToast('Ссылка скопирована')).catch(() => showToast('Не удалось скопировать'));
+}
+
+function deleteMediaItem(id) {
+  if (!confirm('Удалить из медиатеки?')) return;
+  mediaLibrary = (mediaLibrary || []).filter(x => x.id !== id);
+  persistMediaLibrary();
+  renderMediaList();
+  showToast('Удалено');
+}
+
 function toggleSearch() {
   const bar = document.getElementById('search-bar');
   const input = document.getElementById('search-input');
@@ -2348,6 +2692,7 @@ function applyRole() {
     // Hide all edit controls
     document.getElementById('fab').style.display = 'none';
     document.querySelectorAll('.nav-add-project').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.nav-media').forEach(el => el.style.display = 'none');
   }
 }
 
