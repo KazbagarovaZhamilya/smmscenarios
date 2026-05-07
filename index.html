@@ -1052,6 +1052,17 @@
       <div id="result-thumbs" style="margin-top:10px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none"></div>
     </div>
 
+    <div class="proj-field">
+      <label>Заметка</label>
+      <textarea id="result-note" placeholder="Например: что сработало, что улучшить..." style="
+        width:100%;min-height:110px;resize:vertical;
+        padding:12px 14px;border-radius:12px;
+        border:1.5px solid var(--border);background:var(--surface);
+        font-family:'Inter',sans-serif;font-size:14px;color:var(--text);
+        outline:none;
+      "></textarea>
+    </div>
+
     <div class="btn-row" style="margin-top:14px">
       <button class="btn btn-cancel" onclick="closeResultModal()">Отмена</button>
       <button class="btn btn-primary" onclick="saveResult()">Сохранить</button>
@@ -1193,7 +1204,7 @@ let calendarSelectedDate = '';
 let calendarPickDate = ''; // дата, для которой сейчас выбираем сценарий через "+"
 let mediaLibrary = []; // список медиа из Supabase таблицы (общий для всех устройств)
 let mediaFilter = 'all'; // all | pending | approved
-let calendarResults = {}; // scenarioId -> { id, ig_url, images[] }
+let calendarResults = {}; // scenarioId -> { id, ig_url, images[], note }
 let editingResultScenarioId = null;
 let editingResultId = null;
 let pendingResultImages = []; // urls
@@ -2093,7 +2104,12 @@ async function loadCalendarResultsForDate(dateStr) {
     const rows = await api(`/rest/v1/scenario_results?select=*&project_id=eq.${currentProjectId}&date=eq.${dateStr}`);
     (rows || []).forEach(r => {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
-      calendarResults[r.scenario_id] = { id: r.id, ig_url: r.ig_url || '', images: Array.isArray(imgs) ? imgs : [] };
+      calendarResults[r.scenario_id] = {
+        id: r.id,
+        ig_url: r.ig_url || '',
+        images: Array.isArray(imgs) ? imgs : [],
+        note: r.note || ''
+      };
     });
   } catch (e) {
     // просто не показываем отчеты
@@ -2299,6 +2315,7 @@ function openResultModal(ev, scenarioId) {
 
   document.getElementById('result-title').textContent = `Отчет · ${formatDateLabelRu(calendarSelectedDate)}`;
   document.getElementById('result-ig-url').value = res && res.ig_url ? res.ig_url : '';
+  document.getElementById('result-note').value = res && res.note ? res.note : '';
   renderResultThumbs();
   const overlay = document.getElementById('result-overlay');
   if (overlay) overlay.classList.add('open');
@@ -2310,6 +2327,8 @@ function closeResultModal() {
   editingResultScenarioId = null;
   editingResultId = null;
   pendingResultImages = [];
+  const note = document.getElementById('result-note');
+  if (note) note.value = '';
   const q = document.getElementById('result-upload-queue');
   if (q) { q.innerHTML = ''; q.style.display = 'none'; }
 }
@@ -2376,11 +2395,13 @@ async function handleResultFiles(e) {
 async function saveResult() {
   if (!editingResultScenarioId || !currentProjectId || !calendarSelectedDate) return;
   const igUrl = (document.getElementById('result-ig-url').value || '').trim();
+  const note = (document.getElementById('result-note').value || '').trim();
   const payload = {
     project_id: currentProjectId,
     scenario_id: editingResultScenarioId,
     date: calendarSelectedDate,
     ig_url: igUrl || null,
+    note: note || null,
     images: JSON.stringify(pendingResultImages || [])
   };
   try {
@@ -2390,7 +2411,12 @@ async function saveResult() {
       const created = await api('/rest/v1/scenario_results', 'POST', payload);
       if (created && created[0]) editingResultId = created[0].id;
     }
-    calendarResults[editingResultScenarioId] = { id: editingResultId || (calendarResults[editingResultScenarioId] ? calendarResults[editingResultScenarioId].id : null), ig_url: igUrl, images: [...(pendingResultImages || [])] };
+    calendarResults[editingResultScenarioId] = {
+      id: editingResultId || (calendarResults[editingResultScenarioId] ? calendarResults[editingResultScenarioId].id : null),
+      ig_url: igUrl,
+      images: [...(pendingResultImages || [])],
+      note
+    };
     renderCalendarPlanList();
     closeResultModal();
     showToast('Отчет сохранен');
