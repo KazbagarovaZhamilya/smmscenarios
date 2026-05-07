@@ -2314,7 +2314,7 @@ function renderCalendar() {
   const act = document.getElementById('calendar-day-report-actions');
   if (act) {
     if (calendarSelectedDate && isPastDate(calendarSelectedDate)) {
-      act.innerHTML = `<button class="media-upload-btn" style="width:100%" onclick="openDayResultModal(event)">Отчет дня (URL + скрины + заметка)</button>`;
+      act.innerHTML = `<button class="media-upload-btn" style="width:100%" onclick="openDayResultModal(event)">Отчет дня</button>`;
     } else {
       act.innerHTML = '';
     }
