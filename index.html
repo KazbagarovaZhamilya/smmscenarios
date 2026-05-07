@@ -481,7 +481,7 @@
     background: var(--accent);
   }
   .calendar-plan-list {
-    margin-top: 12px;
+    margin-top: 6px;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -2381,23 +2381,9 @@ function renderCalendar() {
 
   grid.innerHTML = dayNames + cells.join('');
 
-  // Кнопка "Отчет дня" — чтобы не путаться со списком сценариев по "+"
+  // Убрали верхний дублирующий заголовок "Отчет дня".
   const act = document.getElementById('calendar-day-report-actions');
-  if (act) {
-    if (calendarSelectedDate && isPastDate(calendarSelectedDate)) {
-      // Если отчет уже есть — показываем карандашик (редактировать)
-      // Если отчета еще нет — показываем подсказку и карандашик (создать)
-      const hasReport = !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note));
-      act.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-          <div style="font-weight:800;color:var(--text2);font-size:12px">${hasReport ? 'Отчет дня' : 'Отчет дня (пока пусто)'}</div>
-          <button class="media-action-btn" onclick="openDayResultModal(event)" title="Редактировать" style="padding:6px 10px">✎</button>
-        </div>
-      `;
-    } else {
-      act.innerHTML = '';
-    }
-  }
+  if (act) act.innerHTML = '';
 
   renderCalendarPlanList();
 }
