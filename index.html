@@ -2300,7 +2300,10 @@ function renderCalendar() {
            onkeydown="if(event.key==='Enter'||event.key===' '){selectCalendarDate('${dateStr}')}">
         <span class="calendar-day-num">${d}</span>
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
-        ${count === 0 && isAdmin() ? `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>` : ''}
+        ${isAdmin() ? (isPastDate(dateStr)
+          ? `<button type="button" class="calendar-add-btn" onclick="openDayResultModalForDate(event,'${dateStr}')">+</button>`
+          : (count === 0 ? `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>` : '')
+        ) : ''}
       </div>
     `);
   }
@@ -2443,6 +2446,20 @@ function closeCalendarPickOutside(e) {
 }
 
 // ── ОТЧЕТ (прошедшие даты) ──
+function openDayResultModalForDate(ev, dateStr) {
+  // Плюсик на прошедшей дате открывает отчет дня
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  if (!dateStr) return;
+  calendarSelectedDate = dateStr;
+  Promise.all([
+    loadCalendarResultsForDate(calendarSelectedDate),
+    loadDayResultForDate(calendarSelectedDate)
+  ]).finally(() => {
+    renderCalendar();
+    openDayResultModal(ev);
+  });
+}
+
 function openDayResultModal(ev) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   if (!calendarSelectedDate || !isPastDate(calendarSelectedDate)) {
