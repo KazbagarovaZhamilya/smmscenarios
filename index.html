@@ -1029,6 +1029,8 @@
       <button class="calendar-nav-btn" onclick="changeCalendarMonth(1)">›</button>
     </div>
     <div class="calendar-grid" id="calendar-grid"></div>
+    <!-- Кнопка "Отчет дня" для прошедшей выбранной даты -->
+    <div id="calendar-day-report-actions" style="margin-top:10px"></div>
     <div class="calendar-plan-list" id="calendar-plan-list"></div>
   </div>
 </div>
@@ -2304,6 +2306,17 @@ function renderCalendar() {
   }
 
   grid.innerHTML = dayNames + cells.join('');
+
+  // Кнопка "Отчет дня" — чтобы не путаться со списком сценариев по "+"
+  const act = document.getElementById('calendar-day-report-actions');
+  if (act) {
+    if (calendarSelectedDate && isPastDate(calendarSelectedDate)) {
+      act.innerHTML = `<button class="media-upload-btn" style="width:100%" onclick="openDayResultModal(event)">Отчет дня (URL + скрины + заметка)</button>`;
+    } else {
+      act.innerHTML = '';
+    }
+  }
+
   renderCalendarPlanList();
 }
 
