@@ -2294,6 +2294,16 @@ function renderCalendar() {
     const dateStr = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const count = scenarios.filter(s => plan[s.id] === dateStr).length;
     const selected = calendarSelectedDate === dateStr ? 'selected' : '';
+
+    // Плюсик показываем только на выбранной дате, чтобы не нажимался случайно пальцем.
+    // Логика:
+    // - Будущая дата: плюс только если на дне 0 сценариев
+    // - Прошедшая дата: плюс только если отчета дня еще нет
+    const isSelectedDay = calendarSelectedDate === dateStr;
+    const isPast = isPastDate(dateStr);
+    const hasDayReport = isSelectedDay && !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note));
+    const showPlus = isAdmin() && isSelectedDay && (isPast ? !hasDayReport : (count === 0));
+
     cells.push(`
       <!-- Важно: не делаем "кнопку в кнопке". Иначе маленький "+" может не показываться/не нажиматься -->
       <div class="calendar-day ${selected}" role="button" tabindex="0"
@@ -2301,9 +2311,9 @@ function renderCalendar() {
            onkeydown="if(event.key==='Enter'||event.key===' '){selectCalendarDate('${dateStr}')}">
         <span class="calendar-day-num">${d}</span>
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
-        ${isAdmin() ? (isPastDate(dateStr)
+        ${showPlus ? (isPast
           ? `<button type="button" class="calendar-add-btn" onclick="openDayResultModalForDate(event,'${dateStr}')">+</button>`
-          : (count === 0 ? `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>` : '')
+          : `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>`
         ) : ''}
       </div>
     `);
@@ -2315,7 +2325,15 @@ function renderCalendar() {
   const act = document.getElementById('calendar-day-report-actions');
   if (act) {
     if (calendarSelectedDate && isPastDate(calendarSelectedDate)) {
-      act.innerHTML = `<button class="media-upload-btn" style="width:100%" onclick="openDayResultModal(event)">Отчет дня</button>`;
+      // Если отчет уже есть — показываем карандашик (редактировать)
+      // Если отчета еще нет — показываем подсказку и карандашик (создать)
+      const hasReport = !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note));
+      act.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div style="font-weight:800;color:var(--text2);font-size:12px">${hasReport ? 'Отчет дня' : 'Отчет дня (пока пусто)'}</div>
+          <button class="media-action-btn" onclick="openDayResultModal(event)" title="Редактировать" style="padding:6px 10px">✎</button>
+        </div>
+      `;
     } else {
       act.innerHTML = '';
     }
