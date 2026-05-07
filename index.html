@@ -1071,6 +1071,44 @@
   </div>
 </div>
 
+<!-- Отчет ДНЯ (для прошедшей даты, даже если нет сценариев) -->
+<div class="proj-overlay" id="day-result-overlay" onclick="closeDayResultModalOutside(event)">
+  <div class="proj-modal" style="padding-bottom:26px">
+    <div class="modal-handle"></div>
+    <div class="proj-title" id="day-result-title">Отчет дня</div>
+
+    <div class="proj-field">
+      <label>Ссылка на ролик в Instagram</label>
+      <input type="text" id="day-result-ig-url" placeholder="Вставь ссылку..." oninput="updateDayResultIgPreview()">
+      <div id="day-result-ig-preview" style="margin-top:10px"></div>
+    </div>
+
+    <div class="proj-field">
+      <label>Скрины эффективности (до 50MB файл)</label>
+      <div id="day-result-upload-queue" style="display:none;flex-direction:column;gap:8px"></div>
+      <button class="media-upload-btn" style="width:100%;margin-top:8px" onclick="document.getElementById('day-result-file-input').click()">+ Добавить скрины</button>
+      <input type="file" id="day-result-file-input" accept="image/*" style="display:none" multiple onchange="handleDayResultFiles(event)">
+      <div id="day-result-thumbs" style="margin-top:10px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none"></div>
+    </div>
+
+    <div class="proj-field">
+      <label>Заметка</label>
+      <textarea id="day-result-note" placeholder="Например: что сработало, что улучшить..." style="
+        width:100%;min-height:110px;resize:vertical;
+        padding:12px 14px;border-radius:12px;
+        border:1.5px solid var(--border);background:var(--surface);
+        font-family:'Inter',sans-serif;font-size:14px;color:var(--text);
+        outline:none;
+      "></textarea>
+    </div>
+
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-cancel" onclick="closeDayResultModal()">Отмена</button>
+      <button class="btn btn-primary" onclick="saveDayResult()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- Выбор сценария для даты (открывается по "+" в календаре) -->
 <div class="proj-overlay" id="calendar-pick-overlay" onclick="closeCalendarPickOutside(event)">
   <div class="proj-modal" style="padding-bottom:26px">
@@ -1209,6 +1247,9 @@ let calendarResults = {}; // scenarioId -> { id, ig_url, images[], note }
 let editingResultScenarioId = null;
 let editingResultId = null;
 let pendingResultImages = []; // urls
+let dayResult = null; // { id, ig_url, images[], note }
+let editingDayResultId = null;
+let pendingDayResultImages = [];
 
 function isNetworkError(e) {
   const msg = (e && e.message ? e.message : String(e || '')).toLowerCase();
@@ -1857,6 +1898,8 @@ window.addEventListener('popstate', () => {
     closeLightbox(true);
   } else if (document.getElementById('calendar-pick-overlay').classList.contains('open')) {
     closeCalendarPick(true);
+  } else if (document.getElementById('day-result-overlay') && document.getElementById('day-result-overlay').classList.contains('open')) {
+    closeDayResultModal(true);
   } else if (document.getElementById('result-overlay') && document.getElementById('result-overlay').classList.contains('open')) {
     closeResultModal(true);
   } else if (document.getElementById('media-overlay') && document.getElementById('media-overlay').classList.contains('open')) {
@@ -2139,16 +2182,62 @@ async function loadCalendarResultsForDate(dateStr) {
   }
 }
 
+async function loadDayResultForDate(dateStr) {
+  dayResult = null;
+  editingDayResultId = null;
+  if (!dateStr || !currentProjectId) return;
+  if (!isPastDate(dateStr)) return;
+  try {
+    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=eq.${dateStr}`);
+    if (rows && rows[0]) {
+      const r = rows[0];
+      const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
+      dayResult = { id: r.id, ig_url: r.ig_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
+      editingDayResultId = r.id;
+    }
+  } catch (e) {
+    // тихо
+  }
+}
+
 function renderCalendarPlanList() {
   const list = document.getElementById('calendar-plan-list');
   if (!list) return;
   const items = getCalendarItemsForDate(calendarSelectedDate);
+  const past = isPastDate(calendarSelectedDate);
+  const dayReportBlock = past ? (() => {
+    const hasLink = dayResult && dayResult.ig_url;
+    const imgCount = dayResult && dayResult.images ? dayResult.images.length : 0;
+    const note = dayResult && dayResult.note ? dayResult.note : '';
+    return `
+      <div class="calendar-plan-item" style="border-style:dashed">
+        <div style="font-weight:800;">Отчет дня</div>
+        <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          ${hasLink ? `<a href="${escapeAttr(dayResult.ig_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:11px;font-weight:800;text-decoration:underline">Ролик</a>` : `<span style="font-size:11px;color:var(--muted);font-weight:800">Без ссылки</span>`}
+          <span style="font-size:11px;color:var(--muted);font-weight:800">Скрины: ${imgCount}</span>
+          <button class="media-action-btn" style="padding:6px 10px" onclick="openDayResultModal(event)">Отчет</button>
+        </div>
+        ${hasLink ? `<div style="margin-top:8px">${renderLinkPreviewOrLink(dayResult.ig_url)}</div>` : ``}
+        ${imgCount > 0 ? `
+          <div style="margin-top:8px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px">
+            ${dayResult.images.map(u => `
+              <img src="${escapeAttr(u)}"
+                   style="width:72px;height:72px;border-radius:10px;object-fit:cover;border:1.5px solid var(--border);flex-shrink:0;cursor:pointer"
+                   onclick="openLightbox('${escapeAttr(u)}')">
+            `).join('')}
+          </div>
+        ` : ``}
+        ${note ? `<div style="margin-top:8px;font-size:12px;color:var(--text2);line-height:1.4;white-space:pre-wrap">${escapeHtml(note)}</div>` : ``}
+      </div>
+    `;
+  })() : '';
+
   if (items.length === 0) {
-    list.innerHTML = `<div class="calendar-plan-empty">${calendarSelectedDate ? `На ${formatDateLabelRu(calendarSelectedDate)} ничего не запланировано` : 'Выбери дату'}</div>`;
+    list.innerHTML = dayReportBlock + `<div class="calendar-plan-empty">${calendarSelectedDate ? `На ${formatDateLabelRu(calendarSelectedDate)} ничего не запланировано` : 'Выбери дату'}</div>`;
     return;
   }
-  const past = isPastDate(calendarSelectedDate);
-  list.innerHTML = items.map(s => {
+
+  list.innerHTML = dayReportBlock + items.map(s => {
     const res = calendarResults[s.id];
     const hasLink = res && res.ig_url;
     const imgCount = res && res.images ? res.images.length : 0;
@@ -2220,7 +2309,10 @@ function renderCalendar() {
 function selectCalendarDate(dateStr) {
   calendarSelectedDate = dateStr;
   // Если дата прошедшая — подгружаем отчеты по этой дате
-  loadCalendarResultsForDate(calendarSelectedDate).finally(() => {
+  Promise.all([
+    loadCalendarResultsForDate(calendarSelectedDate),
+    loadDayResultForDate(calendarSelectedDate)
+  ]).finally(() => {
     renderCalendar();
   });
 }
@@ -2337,6 +2429,137 @@ function closeCalendarPickOutside(e) {
 }
 
 // ── ОТЧЕТ (прошедшие даты) ──
+function openDayResultModal(ev) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  if (!calendarSelectedDate || !isPastDate(calendarSelectedDate)) {
+    showToast('Отчет доступен для прошедших дат');
+    return;
+  }
+
+  history.pushState({ modal: 'day_result' }, '');
+
+  const r = dayResult || { ig_url: '', images: [], note: '' };
+  pendingDayResultImages = r.images ? [...r.images] : [];
+  document.getElementById('day-result-title').textContent = `Отчет дня · ${formatDateLabelRu(calendarSelectedDate)}`;
+  document.getElementById('day-result-ig-url').value = r.ig_url || '';
+  document.getElementById('day-result-note').value = r.note || '';
+  updateDayResultIgPreview();
+  renderDayResultThumbs();
+  const overlay = document.getElementById('day-result-overlay');
+  if (overlay) overlay.classList.add('open');
+}
+
+function closeDayResultModal(fromPopState = false) {
+  const overlay = document.getElementById('day-result-overlay');
+  if (!fromPopState && overlay && overlay.classList.contains('open')) {
+    history.back();
+    return;
+  }
+  if (overlay) overlay.classList.remove('open');
+  pendingDayResultImages = [];
+  const prev = document.getElementById('day-result-ig-preview');
+  if (prev) prev.innerHTML = '';
+  const q = document.getElementById('day-result-upload-queue');
+  if (q) { q.innerHTML = ''; q.style.display = 'none'; }
+}
+
+function closeDayResultModalOutside(e) {
+  if (e.target === document.getElementById('day-result-overlay')) closeDayResultModal(false);
+}
+
+function updateDayResultIgPreview() {
+  const input = document.getElementById('day-result-ig-url');
+  const box = document.getElementById('day-result-ig-preview');
+  if (!input || !box) return;
+  const url = (input.value || '').trim();
+  if (!url) { box.innerHTML = ''; return; }
+  box.innerHTML = renderLinkPreviewOrLink(url);
+}
+
+function renderDayResultThumbs() {
+  const el = document.getElementById('day-result-thumbs');
+  if (!el) return;
+  if (!pendingDayResultImages || pendingDayResultImages.length === 0) {
+    el.innerHTML = `<div style="color:var(--muted);font-size:12px">Скриншотов пока нет</div>`;
+    return;
+  }
+  el.innerHTML = pendingDayResultImages.map((url, idx) => `
+    <div style="position:relative;flex-shrink:0">
+      <img src="${escapeAttr(url)}" style="width:72px;height:72px;border-radius:10px;object-fit:cover;border:1.5px solid var(--border)" onclick="openLightbox('${escapeAttr(url)}')">
+      <button onclick="removeDayResultImage(event,${idx})" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:2px solid #fff;background:#c0392b;color:#fff;cursor:pointer;line-height:1">×</button>
+    </div>
+  `).join('');
+}
+
+function removeDayResultImage(ev, idx) {
+  if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+  pendingDayResultImages.splice(idx, 1);
+  renderDayResultThumbs();
+}
+
+async function handleDayResultFiles(e) {
+  const files = Array.from(e.target.files || []);
+  e.target.value = '';
+  if (files.length === 0) return;
+  const queueEl = document.getElementById('day-result-upload-queue');
+  if (queueEl) { queueEl.style.display = 'flex'; }
+
+  for (const file of files) {
+    const maxBytes = 50 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      showToast('Файл больше 50MB — на Free не загрузится');
+      continue;
+    }
+    const localId = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    if (queueEl) queueEl.insertAdjacentHTML('beforeend', buildUploadRowHtml(localId, file.name));
+    try {
+      const url = await uploadFileToBucketWithProgress(file, BUCKET_MEDIA, (pct) => {
+        const bar = document.getElementById(`upload-bar-${localId}`);
+        const hint = document.getElementById(`upload-hint-${localId}`);
+        if (bar) bar.style.width = `${pct}%`;
+        if (hint) hint.textContent = `Загрузка: ${pct}%`;
+      });
+      pendingDayResultImages.push(url);
+      renderDayResultThumbs();
+      const hint = document.getElementById(`upload-hint-${localId}`);
+      if (hint) hint.textContent = 'Готово';
+    } catch (err) {
+      const hint = document.getElementById(`upload-hint-${localId}`);
+      if (hint) hint.textContent = 'Ошибка';
+      showToast('Ошибка загрузки');
+    }
+  }
+}
+
+async function saveDayResult() {
+  if (!currentProjectId || !calendarSelectedDate) return;
+  if (!isPastDate(calendarSelectedDate)) { showToast('Только для прошедших дат'); return; }
+  const igUrl = (document.getElementById('day-result-ig-url').value || '').trim();
+  const note = (document.getElementById('day-result-note').value || '').trim();
+  const payload = {
+    project_id: currentProjectId,
+    date: calendarSelectedDate,
+    ig_url: igUrl || null,
+    note: note || null,
+    images: JSON.stringify(pendingDayResultImages || [])
+  };
+  try {
+    if (editingDayResultId) {
+      await api(`/rest/v1/day_results?id=eq.${editingDayResultId}`, 'PATCH', payload);
+    } else {
+      const created = await api('/rest/v1/day_results', 'POST', payload);
+      if (created && created[0]) editingDayResultId = created[0].id;
+    }
+    dayResult = { id: editingDayResultId, ig_url: igUrl, images: [...(pendingDayResultImages || [])], note };
+    renderCalendarPlanList();
+    closeDayResultModal(true);
+    document.getElementById('day-result-overlay').classList.remove('open');
+    showToast('Отчет сохранен');
+  } catch (e) {
+    showToast('Не удалось сохранить отчет');
+  }
+}
+
 function openResultModal(ev, scenarioId) {
   // чтобы клик по кнопке не открывал редактирование сценария
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
