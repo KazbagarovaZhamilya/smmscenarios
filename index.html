@@ -418,6 +418,20 @@
     background: #fdf3ec;
   }
 
+  /* Мини-превью опубликованного ролика в клетке календаря */
+  .calendar-pub-thumb {
+    position: absolute;
+    left: 4px;
+    bottom: 4px;
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    object-fit: cover;
+    display: block;
+  }
+
   /* Серый "плюсик" на пустых датах (для быстрого планирования) */
   .calendar-add-btn {
     position: absolute;
@@ -1252,6 +1266,7 @@ let pendingResultImages = []; // urls
 let dayResult = null; // { id, ig_url, images[], note }
 let editingDayResultId = null;
 let pendingDayResultImages = [];
+let dayResultsByDate = {}; // dateStr -> { id, ig_url, images[], note }
 
 function isNetworkError(e) {
   const msg = (e && e.message ? e.message : String(e || '')).toLowerCase();
@@ -2198,7 +2213,29 @@ async function loadDayResultForDate(dateStr) {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       dayResult = { id: r.id, ig_url: r.ig_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
       editingDayResultId = r.id;
+      // Подгружаем предпросмотр для ссылки (чтобы картинка появилась в календаре)
+      if (dayResult.ig_url) fetchLinkPreview(dayResult.ig_url);
     }
+  } catch (e) {
+    // тихо
+  }
+}
+
+async function loadDayResultsForMonth(monthDate) {
+  dayResultsByDate = {};
+  if (!currentProjectId || !monthDate) return;
+  try {
+    const start = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+    const end = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
+    const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+    const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=gte.${startStr}&date=lte.${endStr}&order=date.asc`);
+    (rows || []).forEach(r => {
+      const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
+      const d = String(r.date);
+      dayResultsByDate[d] = { id: r.id, ig_url: r.ig_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
+      if (dayResultsByDate[d].ig_url) fetchLinkPreview(dayResultsByDate[d].ig_url);
+    });
   } catch (e) {
     // тихо
   }
@@ -2215,7 +2252,11 @@ function renderCalendarPlanList() {
     const note = dayResult && dayResult.note ? dayResult.note : '';
     return `
       <div class="calendar-plan-item" style="border-style:dashed">
-        <div style="font-weight:800;">Отчет дня</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div style="font-weight:800;">Отчет дня</div>
+          <!-- Карандашик: быстро открыть редактирование "Отчета дня" -->
+          <button class="media-action-btn" style="padding:6px 10px" onclick="openDayResultModal(event)" title="Редактировать">✎</button>
+        </div>
         <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           ${hasLink ? `<a href="${escapeAttr(dayResult.ig_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:11px;font-weight:800;text-decoration:underline">Ролик</a>` : `<span style="font-size:11px;color:var(--muted);font-weight:800">Без ссылки</span>`}
           <span style="font-size:11px;color:var(--muted);font-weight:800">Скрины: ${imgCount}</span>
@@ -2304,6 +2345,12 @@ function renderCalendar() {
     const hasDayReport = isSelectedDay && !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note));
     const showPlus = isAdmin() && isSelectedDay && (isPast ? !hasDayReport : (count === 0));
 
+    // Мини-превью опубликованного ролика (если есть отчет дня с ссылкой)
+    const dr = dayResultsByDate ? dayResultsByDate[dateStr] : null;
+    const pubUrl = dr && dr.ig_url ? dr.ig_url : '';
+    const cached = pubUrl ? linkPreviewCache[pubUrl] : null;
+    const pubImg = cached && !cached.failed && cached.image ? cached.image : '';
+
     cells.push(`
       <!-- Важно: не делаем "кнопку в кнопке". Иначе маленький "+" может не показываться/не нажиматься -->
       <div class="calendar-day ${selected}" role="button" tabindex="0"
@@ -2311,6 +2358,7 @@ function renderCalendar() {
            onkeydown="if(event.key==='Enter'||event.key===' '){selectCalendarDate('${dateStr}')}">
         <span class="calendar-day-num">${d}</span>
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
+        ${pubImg ? `<img class="calendar-pub-thumb" src="${escapeAttr(pubImg)}" alt="" />` : ''}
         ${showPlus ? (isPast
           ? `<button type="button" class="calendar-add-btn" onclick="openDayResultModalForDate(event,'${dateStr}')">+</button>`
           : `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>`
@@ -2355,7 +2403,7 @@ function selectCalendarDate(dateStr) {
 
 function changeCalendarMonth(delta) {
   calendarCurrentMonth = new Date(calendarCurrentMonth.getFullYear(), calendarCurrentMonth.getMonth() + delta, 1);
-  renderCalendar();
+  loadDayResultsForMonth(calendarCurrentMonth).finally(() => renderCalendar());
 }
 
 function openCalendarModal() {
@@ -2366,7 +2414,7 @@ function openCalendarModal() {
   calendarCurrentMonth = new Date(new Date(calendarSelectedDate).getFullYear(), new Date(calendarSelectedDate).getMonth(), 1);
   history.pushState({ modal: 'calendar' }, '');
   document.getElementById('calendar-overlay').classList.add('open');
-  renderCalendar();
+  loadDayResultsForMonth(calendarCurrentMonth).finally(() => renderCalendar());
 }
 
 function closeCalendarModal(fromPopState = false) {
