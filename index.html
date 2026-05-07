@@ -1855,7 +1855,7 @@ window.addEventListener('popstate', () => {
   if (document.getElementById('lightbox').classList.contains('open')) {
     closeLightbox(true);
   } else if (document.getElementById('calendar-pick-overlay').classList.contains('open')) {
-    closeCalendarPick();
+    closeCalendarPick(true);
   } else if (document.getElementById('result-overlay') && document.getElementById('result-overlay').classList.contains('open')) {
     closeResultModal(true);
   } else if (document.getElementById('media-overlay') && document.getElementById('media-overlay').classList.contains('open')) {
@@ -1866,8 +1866,6 @@ window.addEventListener('popstate', () => {
     closeCalendarModal(true);
   } else if (document.getElementById('scenario-overlay').classList.contains('open')) {
     closeScenarioModal(true, true);
-  } else if (document.getElementById('lightbox').classList.contains('open')) {
-    closeLightbox(true);
   }
 });
 
