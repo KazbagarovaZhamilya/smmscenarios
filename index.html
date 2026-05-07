@@ -1367,7 +1367,8 @@ function uploadFileToBucketWithProgress(file, bucketName, onProgress) {
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(`${SUPABASE_URL}/storage/v1/object/public/${bucketName}/${name}`);
       } else {
-        reject(new Error(xhr.responseText || `Upload failed (${xhr.status})`));
+        const msg = (xhr.responseText || '').slice(0, 400);
+        reject(new Error(msg || `Upload failed (${xhr.status})`));
       }
     };
     xhr.onerror = () => reject(new Error('Upload failed'));
@@ -2557,7 +2558,7 @@ async function handleDayResultFiles(e) {
     } catch (err) {
       const hint = document.getElementById(`upload-hint-${localId}`);
       if (hint) hint.textContent = 'Ошибка';
-      showToast('Ошибка загрузки');
+      showToast(`Ошибка загрузки: ${(err && err.message ? err.message : 'неизвестно')}`.slice(0, 180));
     }
   }
 }
