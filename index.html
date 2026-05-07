@@ -990,6 +990,11 @@
 const SUPABASE_URL = 'https://ffytgashtdnaahntrudq.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmeXRnYXNodGRuYWFobnRydWRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5OTgwMzEsImV4cCI6MjA5MzU3NDAzMX0.9erqgwkjDmmpnN0vJgc2oNnGjM7r_tMWihF3dTggswQ';
 const H = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
+// Названия бакетов (папок) в Supabase Storage
+// scenarios — фото/файлы внутри карточек сценариев
+// media — отдельная медиатека (стоки, исходники, тяжёлые видео)
+const BUCKET_SCENARIOS = 'scenarios';
+const BUCKET_MEDIA = 'media';
 const COLORS = ['#b5622a','#c0392b','#8e44ad','#2980b9','#16a085','#27ae60','#f39c12','#d35400','#2c3e50','#7f8c8d'];
 
 let projects = [], scenarios = [];
@@ -1578,15 +1583,15 @@ function clearScenarioDraft() {
   scenarioDraftCache = null;
 }
 
-async function uploadImage(file) {
+async function uploadFileToBucket(file, bucketName = BUCKET_SCENARIOS) {
   const name = `${Date.now()}_${Math.random().toString(36).slice(2)}.${file.name.split('.').pop()}`;
-  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/scenarios/${name}`, {
+  const res = await fetch(`${SUPABASE_URL}/storage/v1/object/${bucketName}/${name}`, {
     method: 'POST',
     headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': file.type },
     body: file
   });
   if (!res.ok) throw new Error('Upload failed');
-  return `${SUPABASE_URL}/storage/v1/object/public/scenarios/${name}`;
+  return `${SUPABASE_URL}/storage/v1/object/public/${bucketName}/${name}`;
 }
 
 function openScenarioModal(options = {}) {
@@ -1653,7 +1658,8 @@ async function saveScenario() {
     // Upload new files
     for (let p of pendingPhotos) {
       if (!p.isExisting && p.file) {
-        p.url = await uploadImage(p.file);
+        // Загружаем фото сценария в бакет scenarios
+        p.url = await uploadFileToBucket(p.file, BUCKET_SCENARIOS);
         p.isExisting = true;
       }
     }
