@@ -2272,6 +2272,7 @@ function renderMediaList() {
         </div>
         <div class="media-actions">
           <button class="media-action-btn" onclick="useMediaItem('${escapeAttr(item.id)}')">В сценарий</button>
+          <button class="media-action-btn" onclick="editMediaTags('${escapeAttr(item.id)}')">Теги</button>
           <button class="media-action-btn danger" onclick="deleteMediaItem('${escapeAttr(item.id)}')">Удалить</button>
         </div>
       </div>
@@ -2380,6 +2381,32 @@ function deleteMediaItem(id) {
       showToast('Удалено');
     } catch (e) {
       showToast('Не удалось удалить');
+    }
+  })();
+}
+
+function editMediaTags(id) {
+  // Простое редактирование тегов: через запятую
+  const item = (mediaLibrary || []).find(x => String(x.id) === String(id));
+  const current = item && item.tags ? item.tags : '';
+  const next = prompt('Теги (через запятую):', current);
+  if (next === null) return; // отмена
+
+  // Немного чистим: убираем двойные пробелы
+  const cleaned = String(next)
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .join(', ');
+
+  (async () => {
+    try {
+      await api(`/rest/v1/media_items?id=eq.${encodeURIComponent(id)}`, 'PATCH', { tags: cleaned });
+      if (item) item.tags = cleaned;
+      renderMediaList();
+      showToast('Теги сохранены');
+    } catch (e) {
+      showToast('Не удалось сохранить теги');
     }
   })();
 }
