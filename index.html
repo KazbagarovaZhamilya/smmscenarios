@@ -1158,7 +1158,6 @@ const LS_PROJECTS_KEY = 'iritual_projects_cache_v1';
 const LS_SCENARIOS_KEY = 'iritual_scenarios_cache_v1';
 const LS_OFFLINE_QUEUE_KEY = 'iritual_offline_queue_v1';
 const LS_RELEASE_PLAN_KEY = 'iritual_release_plan_v1';
-const LS_MEDIA_LIBRARY_KEY = 'iritual_media_library_v1';
 let scenariosByProjectCache = {};
 let offlineQueue = [];
 let syncingOfflineQueue = false;
@@ -1166,7 +1165,7 @@ let releasePlanByProject = {};
 let calendarCurrentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let calendarSelectedDate = '';
 let calendarPickDate = ''; // дата, для которой сейчас выбираем сценарий через "+"
-let mediaLibrary = []; // { id, url, type, name, tags, createdAt }
+let mediaLibrary = []; // список медиа из Supabase таблицы (общий для всех устройств)
 
 function isNetworkError(e) {
   const msg = (e && e.message ? e.message : String(e || '')).toLowerCase();
@@ -1178,7 +1177,6 @@ function loadOfflineState() {
   try { scenariosByProjectCache = JSON.parse(localStorage.getItem(LS_SCENARIOS_KEY) || '{}') || {}; } catch(e) { scenariosByProjectCache = {}; }
   try { offlineQueue = JSON.parse(localStorage.getItem(LS_OFFLINE_QUEUE_KEY) || '[]') || []; } catch(e) { offlineQueue = []; }
   try { releasePlanByProject = JSON.parse(localStorage.getItem(LS_RELEASE_PLAN_KEY) || '{}') || {}; } catch(e) { releasePlanByProject = {}; }
-  try { mediaLibrary = JSON.parse(localStorage.getItem(LS_MEDIA_LIBRARY_KEY) || '[]') || []; } catch(e) { mediaLibrary = []; }
 }
 
 function persistProjectsCache() {
@@ -1196,10 +1194,6 @@ function saveOfflineQueue() {
 
 function persistReleasePlan() {
   localStorage.setItem(LS_RELEASE_PLAN_KEY, JSON.stringify(releasePlanByProject));
-}
-
-function persistMediaLibrary() {
-  localStorage.setItem(LS_MEDIA_LIBRARY_KEY, JSON.stringify(mediaLibrary));
 }
 
 function enqueueOfflineOp(op) {
@@ -2214,7 +2208,7 @@ function openMediaModal() {
   const overlay = document.getElementById('media-overlay');
   if (!overlay) return;
   overlay.classList.add('open');
-  renderMediaList();
+  loadMediaLibrary();
 }
 
 function closeMediaModal() {
@@ -2228,6 +2222,18 @@ function closeMediaModal() {
 
 function closeMediaModalOutside(e) {
   if (e.target === document.getElementById('media-overlay')) closeMediaModal();
+}
+
+async function loadMediaLibrary() {
+  // Берём список медиа из Supabase (а не из localStorage)
+  try {
+    if (!currentProjectId) { mediaLibrary = []; renderMediaList(); return; }
+    mediaLibrary = await api(`/rest/v1/media_items?select=*&project_id=eq.${currentProjectId}&order=created_at.desc`);
+  } catch (e) {
+    mediaLibrary = [];
+    showToast('Не удалось загрузить медиатеку');
+  }
+  renderMediaList();
 }
 
 function getMediaSearchQuery() {
@@ -2311,17 +2317,18 @@ async function handleMediaFiles(e) {
         if (hint) hint.textContent = `Загрузка: ${pct}%`;
       });
 
-      // Сохраняем в локальный каталог медиатеки
-      const item = {
-        id: localId,
+      // Сохраняем карточку медиа в Supabase (чтобы было видно на всех устройствах)
+      const payload = {
+        project_id: currentProjectId,
         url,
         type: file.type || 'application/octet-stream',
         name: (file.name || 'Медиа').replace(/\.[^/.]+$/, ''),
-        tags: '',
-        createdAt: Date.now()
+        tags: ''
       };
-      mediaLibrary.unshift(item);
-      persistMediaLibrary();
+      const created = await api('/rest/v1/media_items', 'POST', payload);
+      // Supabase возвращает массив
+      if (created && created[0]) mediaLibrary.unshift(created[0]);
+      else await loadMediaLibrary();
       renderMediaList();
 
       const hint = document.getElementById(`upload-hint-${localId}`);
@@ -2365,10 +2372,16 @@ function useMediaItem(id) {
 
 function deleteMediaItem(id) {
   if (!confirm('Удалить из медиатеки?')) return;
-  mediaLibrary = (mediaLibrary || []).filter(x => x.id !== id);
-  persistMediaLibrary();
-  renderMediaList();
-  showToast('Удалено');
+  (async () => {
+    try {
+      await api(`/rest/v1/media_items?id=eq.${encodeURIComponent(id)}`, 'DELETE');
+      mediaLibrary = (mediaLibrary || []).filter(x => String(x.id) !== String(id));
+      renderMediaList();
+      showToast('Удалено');
+    } catch (e) {
+      showToast('Не удалось удалить');
+    }
+  })();
 }
 
 function toggleSearch() {
