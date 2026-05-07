@@ -1905,7 +1905,7 @@ function renderCalendar() {
       <button class="calendar-day ${selected}" onclick="selectCalendarDate('${dateStr}')">
         <span class="calendar-day-num">${d}</span>
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
-        ${count === 0 && isAdmin() ? `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>` : ''}
+        ${isAdmin() ? `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>` : ''}
       </button>
     `);
   }
