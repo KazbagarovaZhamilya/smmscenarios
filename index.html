@@ -1957,30 +1957,50 @@ function openCalendarScenarioPicker(ev, dateStr) {
   // Заголовок с выбранной датой (чтобы было понятно, куда ставим)
   title.textContent = `Поставить на ${formatDateLabelRu(dateStr)}`;
 
-  // Показываем все сценарии проекта (можно выбрать любой — дата автоподставится)
-  // Если сценарий уже стоит в плане — он просто "переедет" на новую дату.
-  const sorted = [...scenarios].sort((a, b) => {
+  // Показываем только сценарии БЕЗ даты (чтобы планировать было быстро и без путаницы)
+  const withoutDate = scenarios.filter(s => !getScenarioReleaseDate(s.id));
+  const sorted = [...withoutDate].sort((a, b) => {
     const pa = (a.position ?? 0), pb = (b.position ?? 0);
     if (pa !== pb) return pa - pb;
     return String(a.title || '').localeCompare(String(b.title || ''), 'ru');
   });
 
-  if (sorted.length === 0) {
-    list.innerHTML = `<div class="calendar-plan-empty">Нет сценариев в проекте</div>`;
-  } else {
-    list.innerHTML = sorted.map(s => {
-      const currentDate = getScenarioReleaseDate(s.id);
-      const sub = currentDate ? `Сейчас: ${formatDateLabelRu(currentDate)}` : 'Сейчас: без даты';
-      return `
+  // Первый блок: быстро создать новый сценарий сразу на выбранную дату
+  const createBlock = `
+    <button class="calendar-plan-item" style="text-align:left;cursor:pointer;border-style:dashed"
+            onclick="createScenarioForCalendarDate()">
+      <div style="font-weight:800;color:var(--text2);">+ Сценарий</div>
+      <div style="margin-top:3px;font-size:11px;color:var(--muted);">Создать новый и сразу поставить на эту дату</div>
+    </button>
+  `;
+
+  const listBlocks = (sorted.length === 0)
+    ? `<div class="calendar-plan-empty">Нет сценариев без даты</div>`
+    : sorted.map(s => `
         <button class="calendar-plan-item" style="text-align:left;cursor:pointer" onclick="pickScenarioForCalendarDate(${s.id})">
           <div style="font-weight:700;">${escapeHtml(s.title || 'Без названия')}</div>
-          <div style="margin-top:3px;font-size:11px;color:var(--muted);">${escapeHtml(sub)}</div>
+          ${s.hero ? `<div style="margin-top:3px;font-size:11px;color:var(--muted);">${escapeHtml(s.hero)}</div>` : `<div style="margin-top:3px;font-size:11px;color:var(--muted);">Без героя</div>`}
         </button>
-      `;
-    }).join('');
-  }
+      `).join('');
+
+  list.innerHTML = createBlock + listBlocks;
 
   overlay.classList.add('open');
+}
+
+function createScenarioForCalendarDate() {
+  // Создаём новый сценарий и заранее подставляем дату выбранного дня
+  if (!calendarPickDate) return;
+  closeCalendarPick();
+  openScenarioModal();
+  editingScenarioId = null;
+  document.getElementById('scenario-modal-title').textContent = 'Новый сценарий';
+  document.getElementById('save-btn').textContent = 'Сохранить';
+  document.getElementById('inp-release-date').value = calendarPickDate;
+  // Подсказка для названия (можно сразу переписать)
+  const titleInp = document.getElementById('inp-title');
+  if (titleInp && !titleInp.value) titleInp.value = 'Сценарий типа';
+  queueScenarioDraftAutosave();
 }
 
 function pickScenarioForCalendarDate(scenarioId) {
