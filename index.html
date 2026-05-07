@@ -1041,7 +1041,8 @@
 
     <div class="proj-field">
       <label>Ссылка на ролик в Instagram</label>
-      <input type="text" id="result-ig-url" placeholder="Вставь ссылку...">
+      <input type="text" id="result-ig-url" placeholder="Вставь ссылку..." oninput="updateResultIgPreview()">
+      <div id="result-ig-preview" style="margin-top:10px"></div>
     </div>
 
     <div class="proj-field">
@@ -2157,6 +2158,7 @@ function renderCalendarPlanList() {
            ${hasLink ? `<a href="${escapeAttr(res.ig_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:11px;font-weight:800;text-decoration:underline">Ролик</a>` : `<span style="font-size:11px;color:var(--muted);font-weight:800">Без ссылки</span>`}
            <button class="media-action-btn" style="padding:6px 10px" onclick="openResultModal(event,${s.id})">Отчет</button>
          </div>
+         ${hasLink ? `<div style="margin-top:8px">${renderLinkPreview(res.ig_url)}</div>` : ``}
          ${imgCount > 0 ? `
            <div style="margin-top:8px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px">
              ${res.images.map(u => `
@@ -2354,6 +2356,7 @@ function openResultModal(ev, scenarioId) {
   document.getElementById('result-title').textContent = `Отчет · ${formatDateLabelRu(calendarSelectedDate)}`;
   document.getElementById('result-ig-url').value = res && res.ig_url ? res.ig_url : '';
   document.getElementById('result-note').value = res && res.note ? res.note : '';
+  updateResultIgPreview();
   renderResultThumbs();
   const overlay = document.getElementById('result-overlay');
   if (overlay) overlay.classList.add('open');
@@ -2371,8 +2374,20 @@ function closeResultModal(fromPopState = false) {
   pendingResultImages = [];
   const note = document.getElementById('result-note');
   if (note) note.value = '';
+  const prev = document.getElementById('result-ig-preview');
+  if (prev) prev.innerHTML = '';
   const q = document.getElementById('result-upload-queue');
   if (q) { q.innerHTML = ''; q.style.display = 'none'; }
+}
+
+function updateResultIgPreview() {
+  const input = document.getElementById('result-ig-url');
+  const box = document.getElementById('result-ig-preview');
+  if (!input || !box) return;
+  const url = (input.value || '').trim();
+  if (!url) { box.innerHTML = ''; return; }
+  // Используем тот же механизм предпросмотра, что и в карточках сценариев
+  box.innerHTML = renderLinkPreview(url) || `<a href="${escapeAttr(url)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;word-break:break-all">${escapeHtml(url)}</a>`;
 }
 
 function closeResultModalOutside(e) {
