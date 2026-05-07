@@ -1902,11 +1902,14 @@ function renderCalendar() {
     const count = scenarios.filter(s => plan[s.id] === dateStr).length;
     const selected = calendarSelectedDate === dateStr ? 'selected' : '';
     cells.push(`
-      <button class="calendar-day ${selected}" onclick="selectCalendarDate('${dateStr}')">
+      <!-- Важно: не делаем "кнопку в кнопке". Иначе маленький "+" может не показываться/не нажиматься -->
+      <div class="calendar-day ${selected}" role="button" tabindex="0"
+           onclick="selectCalendarDate('${dateStr}')"
+           onkeydown="if(event.key==='Enter'||event.key===' '){selectCalendarDate('${dateStr}')}">
         <span class="calendar-day-num">${d}</span>
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
-        ${isAdmin() ? `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>` : ''}
-      </button>
+        ${count === 0 && isAdmin() ? `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>` : ''}
+      </div>
     `);
   }
 
