@@ -884,6 +884,12 @@
   <div class="header-line1">
     <div class="project-dot" id="header-dot"></div>
     <h1 id="header-title" style="flex:1">Сценарии</h1>
+    <button id="sync-btn" onclick="manualSync()" style="
+      display:none;
+      padding:6px 10px;border-radius:20px;border:1.5px solid var(--border);
+      background:var(--surface2);color:var(--text2);
+      font-size:11px;font-weight:800;cursor:pointer;flex-shrink:0;
+    ">Синк: <span id="sync-count">0</span></button>
     <button id="search-toggle" onclick="toggleSearch()" style="
       width:32px;height:32px;border-radius:50%;border:1.5px solid var(--border);
       background:var(--surface2);display:flex;align-items:center;justify-content:center;
@@ -1312,6 +1318,23 @@ function persistReleasePlan() {
 function enqueueOfflineOp(op) {
   offlineQueue.push(op);
   saveOfflineQueue();
+  updateSyncBadge();
+}
+
+function updateSyncBadge() {
+  const btn = document.getElementById('sync-btn');
+  const countEl = document.getElementById('sync-count');
+  if (!btn || !countEl) return;
+  const n = offlineQueue ? offlineQueue.length : 0;
+  countEl.textContent = String(n);
+  btn.style.display = n > 0 ? 'inline-flex' : 'none';
+}
+
+async function manualSync() {
+  if (!navigator.onLine) { showToast('Нет сети'); return; }
+  if (!offlineQueue || offlineQueue.length === 0) { showToast('Все синхронизировано'); return; }
+  showToast('Синхронизация...');
+  await syncOfflineQueue();
 }
 
 function replaceTempScenarioId(tempId, created) {
@@ -1320,12 +1343,6 @@ function replaceTempScenarioId(tempId, created) {
   const list = scenariosByProjectCache[created.project_id] || [];
   const cidx = list.findIndex(s => s.id === tempId);
   if (cidx !== -1) list[cidx] = created;
-  const plan = getProjectReleasePlan(created.project_id);
-  if (plan[tempId]) {
-    plan[created.id] = plan[tempId];
-    delete plan[tempId];
-    persistReleasePlan();
-  }
 }
 
 async function syncOfflineQueue() {
@@ -1350,6 +1367,7 @@ async function syncOfflineQueue() {
       }
       offlineQueue.shift();
       saveOfflineQueue();
+      updateSyncBadge();
     }
     persistProjectsCache();
     persistScenariosCache();
@@ -1357,10 +1375,11 @@ async function syncOfflineQueue() {
     showToast('Синхронизировано');
   } catch (e) {
     if (!isNetworkError(e)) {
-      // keep queue item for manual retry after fixing server-side issue
+      showToast('Синк не прошел: попробуй еще раз');
     }
   } finally {
     syncingOfflineQueue = false;
+    updateSyncBadge();
   }
 }
 
@@ -1494,23 +1513,29 @@ function updateHeader() {
   document.getElementById('header-title').textContent = p.name;
 }
 
-function getProjectReleasePlan(projectId = currentProjectId) {
-  if (!projectId) return {};
-  if (!releasePlanByProject[projectId]) releasePlanByProject[projectId] = {};
-  return releasePlanByProject[projectId];
+// Дата выпуска теперь хранится в Supabase в таблице scenarios (поле release_date),
+// чтобы календарь синхронизировался между телефоном и компьютером.
+function getScenarioReleaseDate(scenarioId) {
+  const s = scenarios.find(x => x.id === scenarioId);
+  return (s && s.release_date) ? String(s.release_date) : '';
 }
 
-function getScenarioReleaseDate(scenarioId, projectId = currentProjectId) {
-  const plan = getProjectReleasePlan(projectId);
-  return plan[scenarioId] || '';
-}
-
-function setScenarioReleaseDate(scenarioId, dateStr, projectId = currentProjectId) {
-  if (!projectId || !scenarioId) return;
-  const plan = getProjectReleasePlan(projectId);
-  if (dateStr) plan[scenarioId] = dateStr;
-  else delete plan[scenarioId];
-  persistReleasePlan();
+async function setScenarioReleaseDate(scenarioId, dateStr) {
+  const s = scenarios.find(x => x.id === scenarioId);
+  if (!s) return;
+  const next = dateStr || null;
+  try {
+    await api(`/rest/v1/scenarios?id=eq.${scenarioId}`, 'PATCH', { release_date: next });
+    s.release_date = next;
+    persistScenariosCache();
+  } catch (e) {
+    if (!isNetworkError(e)) { showToast('Ошибка'); return; }
+    // оффлайн: меняем локально и ставим в очередь на синхронизацию
+    s.release_date = next;
+    enqueueOfflineOp({ type: 'scenario_update', id: scenarioId, payload: { release_date: next } });
+    persistScenariosCache();
+    showToast('Нет сети: дата сохранена локально');
+  }
 }
 
 function getActiveHeroes() {
@@ -1667,13 +1692,11 @@ async function deleteFromEdit() {
   try {
     await api(`/rest/v1/scenarios?id=eq.${editingScenarioId}`, 'DELETE');
     scenarios = scenarios.filter(s => s.id !== editingScenarioId);
-    setScenarioReleaseDate(editingScenarioId, '');
     persistScenariosCache();
     render(); closeScenarioModal(); showToast('Удалено');
   } catch(e) {
     if (!isNetworkError(e)) { showToast('Ошибка'); return; }
     scenarios = scenarios.filter(s => s.id !== editingScenarioId);
-    setScenarioReleaseDate(editingScenarioId, '');
     enqueueOfflineOp({ type: 'scenario_delete', id: editingScenarioId });
     persistScenariosCache();
     render(); closeScenarioModal(); showToast('Нет сети: удаление в очереди');
@@ -1743,7 +1766,7 @@ function editScenario(id) {
   document.getElementById('inp-hero').value = s.hero || '';
   document.getElementById('inp-title').value = s.title;
   document.getElementById('inp-desc').value = s.description || '';
-  document.getElementById('inp-release-date').value = getScenarioReleaseDate(id);
+  document.getElementById('inp-release-date').value = s.release_date ? String(s.release_date) : '';
   const preview = document.getElementById('desc-preview');
   preview.textContent = s.description || 'Нажми чтобы добавить описание...';
   preview.style.color = s.description ? 'var(--text)' : 'var(--muted)';
@@ -1980,15 +2003,13 @@ async function saveScenario() {
       hero: document.getElementById('inp-hero').value.trim() || null,
       status: currentStatus,
       image_url,
-      project_id: currentProjectId
+      project_id: currentProjectId,
+      release_date: (document.getElementById('inp-release-date').value || null)
     };
-
-    const releaseDate = document.getElementById('inp-release-date').value || '';
     if (editingScenarioId) {
       await api(`/rest/v1/scenarios?id=eq.${editingScenarioId}`, 'PATCH', payload);
       const idx = scenarios.findIndex(s => s.id === editingScenarioId);
       scenarios[idx] = { ...scenarios[idx], ...payload };
-      setScenarioReleaseDate(editingScenarioId, releaseDate);
       persistScenariosCache();
       showToast('Обновлено');
     } else {
@@ -1996,7 +2017,6 @@ async function saveScenario() {
       payload.position = maxPos + 1;
       const [created] = await api('/rest/v1/scenarios', 'POST', payload);
       scenarios.push(created);
-      setScenarioReleaseDate(created.id, releaseDate);
       persistScenariosCache();
       showToast('Сценарий добавлен');
     }
@@ -2008,7 +2028,6 @@ async function saveScenario() {
       if (editingScenarioId) {
         const idx = scenarios.findIndex(s => s.id === editingScenarioId);
         if (idx !== -1) scenarios[idx] = { ...scenarios[idx], ...payload };
-        setScenarioReleaseDate(editingScenarioId, document.getElementById('inp-release-date').value || '');
         enqueueOfflineOp({ type: 'scenario_update', id: editingScenarioId, payload });
         persistScenariosCache();
         showToast('Нет сети: обновление в очереди');
@@ -2016,7 +2035,6 @@ async function saveScenario() {
         const tempId = -Date.now();
         const tempItem = { id: tempId, created_at: new Date().toISOString(), ...payload };
         scenarios.push(tempItem);
-        setScenarioReleaseDate(tempId, document.getElementById('inp-release-date').value || '');
         enqueueOfflineOp({ type: 'scenario_create', tempId, payload });
         persistScenariosCache();
         showToast('Нет сети: сценарий сохранен локально');
@@ -2344,10 +2362,9 @@ function renderCalendar() {
   const cells = [];
   for (let i = 0; i < firstDay; i++) cells.push('<div class="calendar-day empty"></div>');
 
-  const plan = getProjectReleasePlan();
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const count = scenarios.filter(s => plan[s.id] === dateStr).length;
+    const count = scenarios.filter(s => String(s.release_date || '') === dateStr).length;
     const selected = calendarSelectedDate === dateStr ? 'selected' : '';
 
     // Плюсик показываем только на выбранной дате, чтобы не нажимался случайно пальцем.
@@ -2445,7 +2462,7 @@ function openCalendarScenarioPicker(ev, dateStr) {
   title.textContent = `Поставить на ${formatDateLabelRu(dateStr)}`;
 
   // Показываем только сценарии БЕЗ даты (чтобы планировать было быстро и без путаницы)
-  const withoutDate = scenarios.filter(s => !getScenarioReleaseDate(s.id));
+  const withoutDate = scenarios.filter(s => !s.release_date);
   const sorted = [...withoutDate].sort((a, b) => {
     const pa = (a.position ?? 0), pb = (b.position ?? 0);
     if (pa !== pb) return pa - pb;
@@ -3259,7 +3276,6 @@ async function bulkDeleteScenarios() {
   if (!confirm(`Удалить сценарии: ${selected.length}?`)) return;
   try {
     await Promise.all(selected.map(s => api(`/rest/v1/scenarios?id=eq.${s.id}`, 'DELETE')));
-    selected.forEach(s => setScenarioReleaseDate(s.id, ''));
     scenarios = scenarios.filter(s => !selectedScenarioIds.has(s.id));
     persistScenariosCache();
     selectedScenarioIds.clear();
