@@ -2155,11 +2155,12 @@ function getCalendarItemsForDate(dateStr) {
 }
 
 function isPastDate(dateStr) {
+  // Надежная проверка "прошедшая дата" без проблем с часовыми поясами.
+  // Формат dateStr у нас: YYYY-MM-DD. Его можно сравнивать как строку.
   if (!dateStr) return false;
-  const d = new Date(dateStr + 'T00:00:00');
-  const today = new Date();
-  const t = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  return d.getTime() < t.getTime();
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return String(dateStr) < todayStr;
 }
 
 async function loadCalendarResultsForDate(dateStr) {
