@@ -2225,6 +2225,8 @@ async function loadDayResultForDate(dateStr) {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       dayResult = { id: r.id, ig_url: r.ig_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
       editingDayResultId = r.id;
+      // Обновляем кэш по месяцу, чтобы превью появлялось в самой клетке даты
+      dayResultsByDate[dateStr] = { ...dayResult };
       // Подгружаем предпросмотр для ссылки (чтобы картинка появилась в календаре)
       if (dayResult.ig_url) fetchLinkPreview(dayResult.ig_url);
     }
@@ -2358,7 +2360,7 @@ function renderCalendar() {
     const showPlus = isAdmin() && isSelectedDay && (isPast ? !hasDayReport : (count === 0));
 
     // Мини-превью опубликованного ролика (если есть отчет дня с ссылкой)
-    const dr = dayResultsByDate ? dayResultsByDate[dateStr] : null;
+    const dr = (dayResultsByDate && dayResultsByDate[dateStr]) || (dateStr === calendarSelectedDate ? dayResult : null);
     const pubUrl = dr && dr.ig_url ? dr.ig_url : '';
     const cached = pubUrl ? linkPreviewCache[pubUrl] : null;
     const pubImg = cached && !cached.failed && cached.image ? cached.image : '';
@@ -2647,6 +2649,9 @@ async function saveDayResult() {
       if (created && created[0]) editingDayResultId = created[0].id;
     }
     dayResult = { id: editingDayResultId, ig_url: igUrl, images: [...(pendingDayResultImages || [])], note };
+    // Обновляем кэш по месяцу, чтобы превью появлялось в календаре сразу
+    dayResultsByDate[calendarSelectedDate] = { ...dayResult };
+    if (igUrl) fetchLinkPreview(igUrl);
     renderCalendarPlanList();
     closeDayResultModal(true);
     document.getElementById('day-result-overlay').classList.remove('open');
