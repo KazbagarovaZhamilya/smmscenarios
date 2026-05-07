@@ -815,6 +815,24 @@
     background: #fdf5f5;
     color: #c0392b;
   }
+  .mini-icon-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 12px;
+    border: 1.5px solid var(--border);
+    background: var(--surface2);
+    color: var(--text2);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .mini-icon-btn.danger {
+    border-color: #e8c4c4;
+    background: #fdf5f5;
+    color: #c0392b;
+  }
   .upload-row {
     border: 1.5px dashed var(--border);
     background: var(--surface);
@@ -2335,18 +2353,20 @@ function renderCalendarPlanList() {
          `}`
       : '';
     const desc = s.description ? `<div style="margin-top:6px;font-size:12px;color:var(--text2);line-height:1.45;white-space:pre-wrap">${linkify(s.description)}${renderLinkPreview(s.description)}</div>` : '';
-    const adminBtns = isAdmin() ? `
-      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="media-action-btn" style="padding:6px 10px" onclick="editScenarioFromCalendar(event,${s.id})">✎ Редактировать</button>
-        <button class="media-action-btn danger" style="padding:6px 10px" onclick="unlinkScenarioFromDate(event,${s.id})">Отвязать</button>
+    const adminIcons = isAdmin() ? `
+      <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+        <button type="button" class="mini-icon-btn" onclick="editScenarioFromCalendar(event,${s.id})" title="Редактировать">✎</button>
+        <button type="button" class="mini-icon-btn danger" onclick="unlinkScenarioFromDate(event,${s.id})" title="Отвязать">⨯</button>
       </div>
     ` : '';
     return `
       <div class="calendar-plan-item">
-        <div style="font-weight:700;">${escapeHtml(s.title || 'Без названия')}</div>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+          <div style="font-weight:700;">${escapeHtml(s.title || 'Без названия')}</div>
+          ${adminIcons}
+        </div>
         ${line2 ? `<div style="margin-top:3px;font-size:11px;color:var(--muted);">${line2}</div>` : ''}
         ${desc}
-        ${adminBtns}
         ${reportLine}
       </div>
     `;
@@ -2362,6 +2382,7 @@ function editScenarioFromCalendar(ev, id) {
 async function unlinkScenarioFromDate(ev, id) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   if (!isAdmin()) return;
+  if (!confirm('Отвязать сценарий от даты?')) return;
   await setScenarioReleaseDate(id, '');
   renderCalendar();
   showToast('Отвязано');
