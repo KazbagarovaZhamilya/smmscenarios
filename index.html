@@ -1367,8 +1367,8 @@ async function syncOfflineQueue() {
     while (offlineQueue.length > 0) {
       const op = offlineQueue[0];
       if (op.type === 'scenario_create') {
-        const [created] = await api('/rest/v1/scenarios', 'POST', op.payload);
-        replaceTempScenarioId(op.tempId, created);
+        const created = await api('/rest/v1/scenarios', 'POST', op.payload);
+        if (created && created[0]) replaceTempScenarioId(op.tempId, created[0]);
       } else if (op.type === 'scenario_update') {
         await api(`/rest/v1/scenarios?id=eq.${op.id}`, 'PATCH', op.payload);
       } else if (op.type === 'scenario_delete') {
@@ -2001,6 +2001,11 @@ async function saveScenario() {
   btn.textContent = 'Сохраняю...'; btn.disabled = true;
   let payload = null;
   try {
+    if (!currentProjectId) {
+      showToast('Сначала выбери проект');
+      btn.textContent = 'Сохранить'; btn.disabled = false;
+      return;
+    }
     // Upload new files
     for (let p of pendingPhotos) {
       if (!p.isExisting && p.file) {
@@ -2028,12 +2033,18 @@ async function saveScenario() {
       persistScenariosCache();
       showToast('Обновлено');
     } else {
-      const maxPos = scenarios.length > 0 ? Math.max(...scenarios.map(s => s.position)) : 0;
+      const positions = scenarios.map(s => s.position).filter(p => typeof p === 'number' && !isNaN(p));
+      const maxPos = positions.length > 0 ? Math.max(...positions) : 0;
       payload.position = maxPos + 1;
-      const [created] = await api('/rest/v1/scenarios', 'POST', payload);
-      scenarios.push(created);
-      persistScenariosCache();
-      showToast('Сценарий добавлен');
+      const created = await api('/rest/v1/scenarios', 'POST', payload);
+      if (created && created[0]) {
+        scenarios.push(created[0]);
+        persistScenariosCache();
+        showToast('Сценарий добавлен');
+      } else {
+        await loadScenarios();
+        showToast('Сценарий добавлен');
+      }
     }
     clearScenarioDraft();
     render(); closeScenarioModal(false);
@@ -2128,12 +2139,17 @@ async function saveProject() {
       persistProjectsCache();
       showToast('Проект обновлён');
     } else {
-      const [created] = await api('/rest/v1/projects', 'POST', payload);
-      projects.push(created);
-      currentProjectId = created.id;
-      persistProjectsCache();
-      await loadScenarios();
-      showToast('Проект создан');
+      const created = await api('/rest/v1/projects', 'POST', payload);
+      if (created && created[0]) {
+        projects.push(created[0]);
+        currentProjectId = created[0].id;
+        persistProjectsCache();
+        await loadScenarios();
+        showToast('Проект создан');
+      } else {
+        await loadProjects();
+        showToast('Проект создан');
+      }
     }
     renderNav(); updateHeader(); closeProjectModal();
   } catch(e) {
