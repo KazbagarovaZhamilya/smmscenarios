@@ -3245,6 +3245,9 @@ async function fetchLinkPreview(url) {
   } finally {
     linkPreviewLoading.delete(url);
     render();
+    // Если открыт календарь — перерисуем сетку дней, чтобы превью появилось без клика
+    const co = document.getElementById('calendar-overlay');
+    if (co && co.classList.contains('open')) renderCalendar();
     // Если открыт отчет — обновим предпросмотр ссылки там тоже
     const ro = document.getElementById('result-overlay');
     if (ro && ro.classList.contains('open')) updateResultIgPreview();
