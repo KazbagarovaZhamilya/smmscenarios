@@ -1337,12 +1337,39 @@ let pendingPhotos = []; // { url, file, isExisting }
 let scenarioDraftCache = null; // autosave for unsaved new scenario
 let draftAutosaveTimer = null;
 const linkPreviewCache = {}; // url -> { title, image, domain } | { failed: true }
+const LS_LINK_PREVIEW_KEY = 'iritual_microlink_cache_v1'; // ключ localStorage для превью Microlink
 const linkPreviewLoading = new Set();
 // Очередь для Microlink: много запросов сразу даёт 429 (лимит бесплатного API)
 const linkPreviewQueue = [];
 const linkPreviewQueued = new Set();
 let linkPreviewDrainRunning = false;
-const LINK_PREVIEW_GAP_MS = 450; // пауза между запросами
+const LINK_PREVIEW_GAP_MS = 1200; // пауза между запросами (бесплатный Microlink режет частые вызовы)
+let linkPreviewPersistTimer = null;
+// Подтянуть сохранённые превью — меньше запросов к Microlink (как после «старого» захода на Netlify)
+function loadLinkPreviewCacheFromStorage() {
+  try {
+    const raw = localStorage.getItem(LS_LINK_PREVIEW_KEY);
+    if (!raw) return;
+    const slim = JSON.parse(raw);
+    if (slim && typeof slim === 'object') Object.assign(linkPreviewCache, slim);
+  } catch (e) { /* тихо */ }
+}
+function persistLinkPreviewCacheSoon() {
+  clearTimeout(linkPreviewPersistTimer);
+  linkPreviewPersistTimer = setTimeout(() => {
+    try {
+      const slim = {};
+      for (const [k, v] of Object.entries(linkPreviewCache)) {
+        if (v && !v.failed && (v.title || v.image)) {
+          slim[k] = { title: v.title || '', image: v.image || '', domain: v.domain || '' };
+        }
+      }
+      const keys = Object.keys(slim);
+      if (keys.length > 150) keys.slice(0, keys.length - 150).forEach(k => delete slim[k]);
+      localStorage.setItem(LS_LINK_PREVIEW_KEY, JSON.stringify(slim));
+    } catch (e) { /* квота localStorage */ }
+  }, 500);
+}
 let lightboxScrollY = 0;
 let fastScrollDragging = false;
 let fastScrollPointerId = null;
@@ -1517,6 +1544,7 @@ function uploadFileToBucketWithProgress(file, bucketName, onProgress) {
 
 async function init() {
   loadOfflineState();
+  loadLinkPreviewCacheFromStorage(); // превью из прошлых заходов — меньше обращений к Microlink
   try {
     projects = await api('/rest/v1/projects?select=*&order=created_at.asc');
     persistProjectsCache();
@@ -3380,16 +3408,13 @@ function rerenderAfterLinkPreview() {
   if (ro && ro.classList.contains('open')) updateResultIgPreview();
 }
 
-// Один запрос к Microlink + обработка лимита 429 (повтор позже, без «failed» навсегда)
+// Один запрос к Microlink; при 429 — пауза очереди (без шторма повторных setTimeout)
 async function fetchLinkPreviewOnce(url) {
   const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=true`);
   if (res.status === 429) {
-    const ra = parseInt(res.headers.get('Retry-After') || '5', 10);
-    const ms = Math.min(Math.max(isNaN(ra) ? 5 : ra, 2), 120) * 1000;
-    setTimeout(() => {
-      if (!linkPreviewCache[url]) fetchLinkPreview(url);
-    }, ms);
-    return { rateLimited: true };
+    const ra = parseInt(res.headers.get('Retry-After') || '20', 10);
+    const pauseMs = Math.min(Math.max(isNaN(ra) ? 20 : ra, 10), 180) * 1000;
+    return { rateLimited: true, pauseMs };
   }
   const json = await res.json();
   if (!json || json.status !== 'success' || !json.data) throw new Error('preview failed');
@@ -3401,6 +3426,7 @@ async function fetchLinkPreviewOnce(url) {
     image: (d.image && d.image.url) || '',
     domain: domain
   };
+  persistLinkPreviewCacheSoon();
   return { ok: true };
 }
 
@@ -3416,8 +3442,13 @@ async function drainLinkPreviewQueue() {
     await new Promise(r => setTimeout(r, LINK_PREVIEW_GAP_MS));
     try {
       const out = await fetchLinkPreviewOnce(url);
-      // При 429 повтор запланирован внутри fetchLinkPreviewOnce; просто идём дальше по очереди
-      if (out && out.rateLimited) { /* ничего */ }
+      if (out && out.rateLimited) {
+        // Вернём URL в начало очереди и подождём — иначе десятки следующих запросов тоже получат 429
+        linkPreviewQueue.unshift(url);
+        linkPreviewQueued.add(url);
+        await new Promise(r => setTimeout(r, out.pauseMs || 20000));
+        continue;
+      }
     } catch (e) {
       linkPreviewCache[url] = { failed: true };
     } finally {
