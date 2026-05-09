@@ -3327,7 +3327,12 @@ async function fetchLinkPreviewOnce(url) {
   // Важно: ходим через Supabase Edge Function (сервер), а не напрямую в Microlink.
   const res = await fetch(`${SUPABASE_URL}/functions/v1/link-preview`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+    headers: {
+      'Content-Type': 'application/json',
+      // Supabase Edge Functions требуют ключ (apikey) и часто ещё Bearer-токен
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`
+    },
     body: JSON.stringify({ url })
   });
   if (res.status === 429) throw new Error('rate_limited');
