@@ -27,9 +27,11 @@ serve(async (req) => {
       });
     }
 
-    // Microlink сам достаёт мета-инфу и картинку превью
+    // Microlink сам достаёт мета-инфу и картинку превью.
+    // Для Instagram часто "image" бывает пустой, поэтому просим ещё screenshot=true
+    // и ниже используем fallback на screenshot.url.
     const res = await fetch(
-      `https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=true`,
+      `https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=true&screenshot=true`,
       {
         headers: {
           // Иногда помогает получать данные стабильнее
@@ -62,10 +64,16 @@ serve(async (req) => {
       domain = "";
     }
 
+    // Берём картинку: сначала обычный image.url, иначе screenshot.url
+    const image =
+      (d.image && d.image.url) ||
+      (d.screenshot && d.screenshot.url) ||
+      "";
+
     return new Response(
       JSON.stringify({
         title: d.title || d.publisher || domain || url,
-        image: (d.image && d.image.url) || "",
+        image,
         domain,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
