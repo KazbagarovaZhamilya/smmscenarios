@@ -2557,7 +2557,13 @@ function renderCalendar() {
     const drAny = dayResultsByDate && dayResultsByDate[dateStr] ? dayResultsByDate[dateStr] : null;
     const hasAnyDayReport = !!(drAny && (drAny.id || drAny.ig_url || (drAny.images && drAny.images.length > 0) || drAny.note));
     const hasSelectedDayReport = isSelectedDay && !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note));
-    const showPlus = isAdmin() && isSelectedDay && (isPast ? !(hasSelectedDayReport || hasAnyDayReport) : (count === 0));
+    // Права:
+    // - Прошедшие даты (Отчет дня): админ и viewer, если отчета еще нет
+    // - Будущие даты (планирование сценариев): только админ и только если на дне 0 сценариев
+    const showPlus = isSelectedDay && (isPast
+      ? (canEditDayReport() && !(hasSelectedDayReport || hasAnyDayReport))
+      : (isAdmin() && count === 0)
+    );
 
     // Мини-превью опубликованного ролика (если есть отчет дня с ссылкой)
     const dr = drAny || (dateStr === calendarSelectedDate ? dayResult : null);
@@ -3813,6 +3819,12 @@ function applyRole() {
 }
 
 function isAdmin() { return currentRole === 'admin'; }
+
+function canEditDayReport() {
+  // Админ и viewer могут добавлять/редактировать "Отчет дня" задним числом.
+  // Роль calendar — только просмотр.
+  return currentRole !== 'calendar' && (isAdmin() || currentRole === 'viewer');
+}
 
 function toggleLoginPassword() {
   // "Глазик" на экране входа: показываем/скрываем пароль
