@@ -438,8 +438,8 @@
   /* Мини-превью опубликованного ролика в клетке календаря */
   .calendar-pub-bg {
     position: absolute;
-    inset: 0;
-    border-radius: inherit;
+    inset: 3px;
+    border-radius: 8px;
     background-size: cover;
     background-position: center;
     filter: saturate(1.12) contrast(1.08);
@@ -448,17 +448,12 @@
   }
   .calendar-pub-overlay {
     position: absolute;
-    inset: 0;
-    border-radius: inherit;
+    inset: 3px;
+    border-radius: 8px;
     /* Превью в календаре: убираем полупрозрачную "вуаль".
        Раньше тут был градиент с прозрачностью, из‑за этого картинка выглядела бледной. */
     background: none;
     pointer-events: none;
-  }
-
-  /* Если в дате есть превью — убираем "белый" фон ячейки */
-  .calendar-day.has-pub {
-    background: transparent;
   }
   .calendar-day-num {
     position: relative;
@@ -2475,14 +2470,7 @@ function renderCalendar() {
     const drAny = dayResultsByDate && dayResultsByDate[dateStr] ? dayResultsByDate[dateStr] : null;
     const hasAnyDayReport = !!(drAny && (drAny.id || drAny.ig_url || (drAny.images && drAny.images.length > 0) || drAny.note));
     const hasSelectedDayReport = isSelectedDay && !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note));
-    /* Права доступа:
-       - Админ: может планировать сценарии (будущие даты) и добавлять "Отчет дня" (прошедшие даты)
-       - Не админ: НЕ может планировать/редактировать сценарии, но МОЖЕТ добавлять "Отчет дня" задним числом
-       Плюсик показываем только на выбранной дате (isSelectedDay), чтобы не нажимался случайно. */
-    const showPlus = isSelectedDay && (isPast
-      ? !(hasSelectedDayReport || hasAnyDayReport)                 // отчет дня можно добавлять всем, если его еще нет
-      : (isAdmin() && count === 0)                                 // сценарии на будущие даты — только админ и только если пусто
-    );
+    const showPlus = isAdmin() && isSelectedDay && (isPast ? !(hasSelectedDayReport || hasAnyDayReport) : (count === 0));
 
     // Мини-превью опубликованного ролика (если есть отчет дня с ссылкой)
     const dr = drAny || (dateStr === calendarSelectedDate ? dayResult : null);
@@ -2490,10 +2478,9 @@ function renderCalendar() {
     const cached = pubUrl ? linkPreviewCache[pubUrl] : null;
     const pubImg = cached && !cached.failed && cached.image ? cached.image : '';
 
-    const pubClass = pubImg ? 'has-pub' : '';
     cells.push(`
       <!-- Важно: не делаем "кнопку в кнопке". Иначе маленький "+" может не показываться/не нажиматься -->
-      <div class="calendar-day ${selected} ${pubClass}" role="button" tabindex="0"
+      <div class="calendar-day ${selected}" role="button" tabindex="0"
            onclick="selectCalendarDate('${dateStr}')"
            onkeydown="if(event.key==='Enter'||event.key===' '){selectCalendarDate('${dateStr}')}">
         <span class="calendar-day-num">${d}</span>
