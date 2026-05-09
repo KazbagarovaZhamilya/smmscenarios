@@ -3465,21 +3465,17 @@ function extractFirstUrl(text) {
   return m ? m[0] : null;
 }
 
-// Сначала прокси /preview (Worker). При 429 от прокси НЕ дергаем Microlink второй раз — было два 429 подряд в консоли
+// Сначала прокси на том же домене /preview (Worker на Cloudflare), иначе напрямую — для Netlify/Vercel без Worker
 async function fetchMicrolinkRaw(targetUrl) {
   const enc = encodeURIComponent(targetUrl);
-  const direct = () => fetch(`https://api.microlink.io/?url=${enc}&meta=true`);
   try {
     const proxyRes = await fetch(`/preview?url=${enc}`);
     const ct = (proxyRes.headers.get('content-type') || '').toLowerCase();
     if (proxyRes.ok && ct.includes('application/json')) return proxyRes;
-    if (proxyRes.status === 429) return proxyRes;
-    // Нет Worker (Netlify и т.д.) — ответ не JSON / 404 — один запрос напрямую
-    if (proxyRes.status === 404 || !ct.includes('application/json')) return direct();
   } catch (e) {
-    /* офлайн */
+    /* нет сети или прокси не развёрнут */
   }
-  return direct();
+  return fetch(`https://api.microlink.io/?url=${enc}&meta=true`);
 }
 
 // Один запрос Microlink только при сохранении — URL картинки кладём в Supabase
