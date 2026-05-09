@@ -1338,11 +1338,6 @@ let scenarioDraftCache = null; // autosave for unsaved new scenario
 let draftAutosaveTimer = null;
 const linkPreviewCache = {}; // url -> { title, image, domain } | { failed: true }
 const linkPreviewLoading = new Set();
-// Очередь для Microlink: много запросов сразу даёт 429 (лимит бесплатного API)
-const linkPreviewQueue = [];
-const linkPreviewQueued = new Set();
-let linkPreviewDrainRunning = false;
-const LINK_PREVIEW_GAP_MS = 450; // пауза между запросами
 let lightboxScrollY = 0;
 let fastScrollDragging = false;
 let fastScrollPointerId = null;
@@ -3371,68 +3366,33 @@ function renderLinkPreviewOrLink(url) {
   return `<a href="${safeUrl}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;word-break:break-all">${escapeHtml(url)}</a>`;
 }
 
-// Обновить экран после подгрузки превью (карточки, календарь, модалка отчёта)
-function rerenderAfterLinkPreview() {
-  render();
-  const co = document.getElementById('calendar-overlay');
-  if (co && co.classList.contains('open')) renderCalendar();
-  const ro = document.getElementById('result-overlay');
-  if (ro && ro.classList.contains('open')) updateResultIgPreview();
-}
-
-// Один запрос к Microlink + обработка лимита 429 (повтор позже, без «failed» навсегда)
-async function fetchLinkPreviewOnce(url) {
-  const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=true`);
-  if (res.status === 429) {
-    const ra = parseInt(res.headers.get('Retry-After') || '5', 10);
-    const ms = Math.min(Math.max(isNaN(ra) ? 5 : ra, 2), 120) * 1000;
-    setTimeout(() => {
-      if (!linkPreviewCache[url]) fetchLinkPreview(url);
-    }, ms);
-    return { rateLimited: true };
+async function fetchLinkPreview(url) {
+  if (!url || linkPreviewCache[url] || linkPreviewLoading.has(url)) return;
+  linkPreviewLoading.add(url);
+  try {
+    const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=true`);
+    const json = await res.json();
+    if (!json || json.status !== 'success' || !json.data) throw new Error('preview failed');
+    const d = json.data;
+    let domain = '';
+    try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch(e) {}
+    linkPreviewCache[url] = {
+      title: d.title || d.publisher || url,
+      image: (d.image && d.image.url) || '',
+      domain: domain
+    };
+  } catch (e) {
+    linkPreviewCache[url] = { failed: true };
+  } finally {
+    linkPreviewLoading.delete(url);
+    render();
+    // Если открыт календарь — перерисуем сетку дней, чтобы превью появилось без клика
+    const co = document.getElementById('calendar-overlay');
+    if (co && co.classList.contains('open')) renderCalendar();
+    // Если открыт отчет — обновим предпросмотр ссылки там тоже
+    const ro = document.getElementById('result-overlay');
+    if (ro && ro.classList.contains('open')) updateResultIgPreview();
   }
-  const json = await res.json();
-  if (!json || json.status !== 'success' || !json.data) throw new Error('preview failed');
-  const d = json.data;
-  let domain = '';
-  try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch (e) {}
-  linkPreviewCache[url] = {
-    title: d.title || d.publisher || url,
-    image: (d.image && d.image.url) || '',
-    domain: domain
-  };
-  return { ok: true };
-}
-
-// Ставим URL в очередь и обрабатываем по одному с паузой — так реже ловим 429
-async function drainLinkPreviewQueue() {
-  if (linkPreviewDrainRunning) return;
-  linkPreviewDrainRunning = true;
-  while (linkPreviewQueue.length > 0) {
-    const url = linkPreviewQueue.shift();
-    linkPreviewQueued.delete(url);
-    if (!url || linkPreviewCache[url]) continue;
-    linkPreviewLoading.add(url);
-    await new Promise(r => setTimeout(r, LINK_PREVIEW_GAP_MS));
-    try {
-      const out = await fetchLinkPreviewOnce(url);
-      // При 429 повтор запланирован внутри fetchLinkPreviewOnce; просто идём дальше по очереди
-      if (out && out.rateLimited) { /* ничего */ }
-    } catch (e) {
-      linkPreviewCache[url] = { failed: true };
-    } finally {
-      linkPreviewLoading.delete(url);
-      rerenderAfterLinkPreview();
-    }
-  }
-  linkPreviewDrainRunning = false;
-}
-
-function fetchLinkPreview(url) {
-  if (!url || linkPreviewCache[url] || linkPreviewLoading.has(url) || linkPreviewQueued.has(url)) return;
-  linkPreviewQueued.add(url);
-  linkPreviewQueue.push(url);
-  drainLinkPreviewQueue();
 }
 
 function showToast(msg) {
