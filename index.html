@@ -2476,7 +2476,8 @@ async function backfillDayResultPreviewUrls() {
   let rows = [];
   try {
     // Берём только те, где есть ссылка и нет сохранённой картинки
-    rows = await api(`/rest/v1/day_results?select=id,date,ig_url,link_preview_url&project_id=eq.${currentProjectId}&ig_url=not.is.null&link_preview_url=is.null&order=date.asc`);
+    // Важно: "пусто" может быть и NULL, и пустая строка
+    rows = await api(`/rest/v1/day_results?select=id,date,ig_url,link_preview_url&project_id=eq.${currentProjectId}&ig_url=not.is.null&or=(link_preview_url.is.null,link_preview_url.eq.)&order=date.asc`);
   } catch (e) {
     showToast('Ошибка: в таблице day_results нет поля link_preview_url');
     return;
