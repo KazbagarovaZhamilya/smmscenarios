@@ -2450,11 +2450,13 @@ function renderCalendar() {
     // - Прошедшая дата: плюс только если отчета дня еще нет
     const isSelectedDay = calendarSelectedDate === dateStr;
     const isPast = isPastDate(dateStr);
-    const hasDayReport = isSelectedDay && !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note));
-    const showPlus = isAdmin() && isSelectedDay && (isPast ? !hasDayReport : (count === 0));
+    const drAny = dayResultsByDate && dayResultsByDate[dateStr] ? dayResultsByDate[dateStr] : null;
+    const hasAnyDayReport = !!(drAny && (drAny.id || drAny.ig_url || (drAny.images && drAny.images.length > 0) || drAny.note));
+    const hasSelectedDayReport = isSelectedDay && !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note));
+    const showPlus = isAdmin() && isSelectedDay && (isPast ? !(hasSelectedDayReport || hasAnyDayReport) : (count === 0));
 
     // Мини-превью опубликованного ролика (если есть отчет дня с ссылкой)
-    const dr = (dayResultsByDate && dayResultsByDate[dateStr]) || (dateStr === calendarSelectedDate ? dayResult : null);
+    const dr = drAny || (dateStr === calendarSelectedDate ? dayResult : null);
     const pubUrl = dr && dr.ig_url ? dr.ig_url : '';
     const cached = pubUrl ? linkPreviewCache[pubUrl] : null;
     const pubImg = cached && !cached.failed && cached.image ? cached.image : '';
@@ -2467,6 +2469,7 @@ function renderCalendar() {
         <span class="calendar-day-num">${d}</span>
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
         ${pubImg ? `<div class="calendar-pub-bg" style="background-image:url('${escapeAttr(pubImg)}')"></div><div class="calendar-pub-overlay"></div>` : ''}
+        ${(!pubImg && hasAnyDayReport) ? `<span class="calendar-dot" style="position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : ''}
         ${showPlus ? (isPast
           ? `<button type="button" class="calendar-add-btn" onclick="openDayResultModalForDate(event,'${dateStr}')">+</button>`
           : `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>`
