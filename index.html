@@ -3323,18 +3323,22 @@ function rerenderAfterLinkPreview() {
 }
 
 async function fetchLinkPreviewOnce(url) {
-  // Один запрос в Microlink (без очереди). Очередь управляется снаружи.
-  const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=true`);
+  // Один запрос за превью (без очереди). Очередь управляется снаружи.
+  // Важно: ходим через Supabase Edge Function (сервер), а не напрямую в Microlink.
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/link-preview`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY },
+    body: JSON.stringify({ url })
+  });
   if (res.status === 429) throw new Error('rate_limited');
-  const json = await res.json();
-  if (!json || json.status !== 'success' || !json.data) throw new Error('preview failed');
-  const d = json.data;
+  const d = await res.json();
+  if (!d || d.error) throw new Error('preview failed');
   let domain = '';
   try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch(e) {}
   linkPreviewCache[url] = {
-    title: d.title || d.publisher || url,
-    image: (d.image && d.image.url) || '',
-    domain: domain
+    title: d.title || domain || url,
+    image: d.image || '',
+    domain: d.domain || domain
   };
   persistLinkPreviewCacheSoon();
 }
