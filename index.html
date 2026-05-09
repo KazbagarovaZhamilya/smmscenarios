@@ -1325,13 +1325,6 @@
 const SUPABASE_URL = 'https://ffytgashtdnaahntrudq.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmeXRnYXNodGRuYWFobnRydWRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5OTgwMzEsImV4cCI6MjA5MzU3NDAzMX0.9erqgwkjDmmpnN0vJgc2oNnGjM7r_tMWihF3dTggswQ';
 const H = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
-/*
-  Превью ссылок храним в БД (разово дергаем Microlink только при сохранении).
-  Один раз выполни в Supabase → SQL Editor:
-  alter table public.scenarios add column if not exists link_preview_url text;
-  alter table public.day_results add column if not exists link_preview_url text;
-  alter table public.scenario_results add column if not exists link_preview_url text;
-*/
 // Названия бакетов (папок) в Supabase Storage
 // scenarios — фото/файлы внутри карточек сценариев
 // media — отдельная медиатека (стоки, исходники, тяжёлые видео)
@@ -1399,7 +1392,7 @@ function scheduleCalendarPreviewDrip() {
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const dr = dayResultsByDate[dateStr];
-    if (dr && dr.ig_url && !dr.link_preview_url && !linkPreviewCache[dr.ig_url]) urls.push(dr.ig_url);
+    if (dr && dr.ig_url && !linkPreviewCache[dr.ig_url]) urls.push(dr.ig_url);
   }
   const uniq = [...new Set(urls)];
   if (uniq.length === 0) return;
@@ -1817,7 +1810,7 @@ function cardHTML(s, num) {
     ${heroName ? `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>${heroName}` : ''}
     ${date ? `<span style="font-weight:400;color:var(--muted);margin-left:${heroName ? 4 : 0}px">${date}</span>` : ''}
   </div>`;
-  const desc = s.description ? `<div class="card-desc">${linkify(s.description)}${renderScenarioLinkPreviewBlock(s)}</div>` : '';
+  const desc = s.description ? `<div class="card-desc">${linkify(s.description)}${renderLinkPreview(s.description)}</div>` : '';
   const icon = status === 'active'
     ? `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 6 12 12 16 14"/></svg>`
     : status === 'draft'
@@ -2203,22 +2196,14 @@ async function saveScenario() {
     const urls = pendingPhotos.map(p => p.url);
     const image_url = urls.length > 0 ? JSON.stringify(urls) : null;
 
-    const descText = document.getElementById('inp-desc').value || '';
-    const linkFromDesc = extractFirstUrl(descText);
-    let linkPreviewUrl = null;
-    if (linkFromDesc) {
-      linkPreviewUrl = await fetchMicrolinkImageOnce(linkFromDesc);
-    }
-
     payload = {
       title,
-      description: descText || null,
+      description: document.getElementById('inp-desc').value || null,
       hero: document.getElementById('inp-hero').value.trim() || null,
       status: currentStatus,
       image_url,
       project_id: currentProjectId,
-      release_date: (document.getElementById('inp-release-date').value || null),
-      link_preview_url: linkPreviewUrl || null
+      release_date: (document.getElementById('inp-release-date').value || null)
     };
     if (editingScenarioId) {
       await api(`/rest/v1/scenarios?id=eq.${editingScenarioId}`, 'PATCH', payload);
@@ -2447,7 +2432,6 @@ async function loadCalendarResultsForDate(dateStr) {
       calendarResults[r.scenario_id] = {
         id: r.id,
         ig_url: r.ig_url || '',
-        link_preview_url: r.link_preview_url || '',
         images: Array.isArray(imgs) ? imgs : [],
         note: r.note || ''
       };
@@ -2467,16 +2451,12 @@ async function loadDayResultForDate(dateStr) {
     if (rows && rows[0]) {
       const r = rows[0];
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
-      dayResult = {
-        id: r.id,
-        ig_url: r.ig_url || '',
-        link_preview_url: r.link_preview_url || '',
-        images: Array.isArray(imgs) ? imgs : [],
-        note: r.note || ''
-      };
+      dayResult = { id: r.id, ig_url: r.ig_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
       editingDayResultId = r.id;
+      // Обновляем кэш по месяцу, чтобы превью появлялось в самой клетке даты
       dayResultsByDate[dateStr] = { ...dayResult };
-      if (dayResult.ig_url && !dayResult.link_preview_url) fetchLinkPreview(dayResult.ig_url);
+      // Подгружаем предпросмотр для ссылки (чтобы картинка появилась в календаре)
+      if (dayResult.ig_url) fetchLinkPreview(dayResult.ig_url);
     }
   } catch (e) {
     // тихо
@@ -2495,13 +2475,7 @@ async function loadDayResultsForMonth(monthDate) {
     (rows || []).forEach(r => {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       const d = String(r.date);
-      dayResultsByDate[d] = {
-        id: r.id,
-        ig_url: r.ig_url || '',
-        link_preview_url: r.link_preview_url || '',
-        images: Array.isArray(imgs) ? imgs : [],
-        note: r.note || ''
-      };
+      dayResultsByDate[d] = { id: r.id, ig_url: r.ig_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
       // Не зовём Microlink тут: на месяц 10+ ссылок = 429 на бесплатном лимите. Превью — каплями в renderCalendar.
     });
   } catch (e) {
@@ -2531,7 +2505,7 @@ function renderCalendarPlanList() {
           <span style="font-size:11px;color:var(--muted);font-weight:800">Скрины: ${imgCount}</span>
           ${canEdit ? `<button class="media-action-btn" style="padding:6px 10px" onclick="openDayResultModal(event)">Отчет</button>` : ``}
         </div>
-        ${hasLink ? `<div style="margin-top:8px">${renderLinkPreviewOrLink(dayResult.ig_url, dayResult.link_preview_url)}</div>` : ``}
+        ${hasLink ? `<div style="margin-top:8px">${renderLinkPreviewOrLink(dayResult.ig_url)}</div>` : ``}
         ${imgCount > 0 ? `
           <div style="margin-top:8px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px">
             ${dayResult.images.map(u => `
@@ -2561,7 +2535,7 @@ function renderCalendarPlanList() {
            ${hasLink ? `<a href="${escapeAttr(res.ig_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:11px;font-weight:800;text-decoration:underline">Ролик</a>` : `<span style="font-size:11px;color:var(--muted);font-weight:800">Без ссылки</span>`}
            ${canEditDayReport() ? `<button class="media-action-btn" style="padding:6px 10px" onclick="openResultModal(event,${s.id})">Отчет</button>` : ``}
          </div>
-         ${hasLink ? `<div style="margin-top:8px">${renderLinkPreviewOrLink(res.ig_url, res.link_preview_url)}</div>` : ``}
+         ${hasLink ? `<div style="margin-top:8px">${renderLinkPreviewOrLink(res.ig_url)}</div>` : ``}
          ${imgCount > 0 ? `
            <div style="margin-top:8px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px">
              ${res.images.map(u => `
@@ -2574,7 +2548,7 @@ function renderCalendarPlanList() {
            <div style="margin-top:8px;font-size:11px;color:var(--muted);font-weight:700">Скрины эффективности: нет</div>
          `}`
       : '';
-    const desc = s.description ? `<div style="margin-top:6px;font-size:12px;color:var(--text2);line-height:1.45;white-space:pre-wrap">${linkify(s.description)}${renderScenarioLinkPreviewBlock(s)}</div>` : '';
+    const desc = s.description ? `<div style="margin-top:6px;font-size:12px;color:var(--text2);line-height:1.45;white-space:pre-wrap">${linkify(s.description)}${renderLinkPreview(s.description)}</div>` : '';
     const adminIcons = isAdmin() ? `
       <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
         <button type="button" class="mini-icon-btn" onclick="editScenarioFromCalendar(event,${s.id})" title="Редактировать">✎</button>
@@ -2653,12 +2627,9 @@ function renderCalendar() {
     // Мини-превью опубликованного ролика (если есть отчет дня с ссылкой)
     const dr = drAny || (dateStr === calendarSelectedDate ? dayResult : null);
     const pubUrl = dr && dr.ig_url ? dr.ig_url : '';
-    let pubImg = dr && dr.link_preview_url ? dr.link_preview_url : '';
-    if (!pubImg) {
-      const cached = pubUrl ? linkPreviewCache[pubUrl] : null;
-      pubImg = cached && !cached.failed && cached.image ? cached.image : '';
-    }
-    // Свой скрин из отчёта (Supabase Storage), если нет картинки из Microlink
+    const cached = pubUrl ? linkPreviewCache[pubUrl] : null;
+    let pubImg = cached && !cached.failed && cached.image ? cached.image : '';
+    // Не зависит от Netlify/Cloudflare и от Microlink: свой скрин из отчёта (Supabase) — видно даже при 429
     if (!pubImg && dr && Array.isArray(dr.images) && dr.images.length > 0) {
       pubImg = dr.images[0];
     }
@@ -2888,9 +2859,7 @@ function updateDayResultIgPreview() {
   if (!input || !box) return;
   const url = (input.value || '').trim();
   if (!url) { box.innerHTML = ''; return; }
-  let stored = '';
-  if (dayResult && dayResult.ig_url === url && dayResult.link_preview_url) stored = dayResult.link_preview_url;
-  box.innerHTML = renderLinkPreviewOrLink(url, stored);
+  box.innerHTML = renderLinkPreviewOrLink(url);
 }
 
 function renderDayResultThumbs() {
@@ -2953,13 +2922,10 @@ async function saveDayResult() {
   if (!isPastDate(calendarSelectedDate)) { showToast('Только для прошедших дат'); return; }
   const igUrl = (document.getElementById('day-result-ig-url').value || '').trim();
   const note = (document.getElementById('day-result-note').value || '').trim();
-  let previewImg = null;
-  if (igUrl) previewImg = await fetchMicrolinkImageOnce(igUrl);
   const payload = {
     project_id: currentProjectId,
     date: calendarSelectedDate,
     ig_url: igUrl || null,
-    link_preview_url: previewImg || null,
     note: note || null,
     images: JSON.stringify(pendingDayResultImages || [])
   };
@@ -2970,14 +2936,10 @@ async function saveDayResult() {
       const created = await api('/rest/v1/day_results', 'POST', payload);
       if (created && created[0]) editingDayResultId = created[0].id;
     }
-    dayResult = {
-      id: editingDayResultId,
-      ig_url: igUrl,
-      link_preview_url: previewImg || '',
-      images: [...(pendingDayResultImages || [])],
-      note
-    };
+    dayResult = { id: editingDayResultId, ig_url: igUrl, images: [...(pendingDayResultImages || [])], note };
+    // Обновляем кэш по месяцу, чтобы превью появлялось в календаре сразу
     dayResultsByDate[calendarSelectedDate] = { ...dayResult };
+    if (igUrl) fetchLinkPreview(igUrl);
     renderCalendarPlanList();
     closeDayResultModal(true);
     document.getElementById('day-result-overlay').classList.remove('open');
@@ -3036,10 +2998,8 @@ function updateResultIgPreview() {
   if (!input || !box) return;
   const url = (input.value || '').trim();
   if (!url) { box.innerHTML = ''; return; }
-  let stored = '';
-  const res = editingResultScenarioId ? calendarResults[editingResultScenarioId] : null;
-  if (res && res.ig_url === url && res.link_preview_url) stored = res.link_preview_url;
-  box.innerHTML = renderLinkPreviewOrLink(url, stored);
+  // Используем тот же механизм предпросмотра, что и в карточках сценариев
+  box.innerHTML = renderLinkPreviewOrLink(url);
 }
 
 function closeResultModalOutside(e) {
@@ -3105,14 +3065,11 @@ async function saveResult() {
   if (!editingResultScenarioId || !currentProjectId || !calendarSelectedDate) return;
   const igUrl = (document.getElementById('result-ig-url').value || '').trim();
   const note = (document.getElementById('result-note').value || '').trim();
-  let previewImg = null;
-  if (igUrl) previewImg = await fetchMicrolinkImageOnce(igUrl);
   const payload = {
     project_id: currentProjectId,
     scenario_id: editingResultScenarioId,
     date: calendarSelectedDate,
     ig_url: igUrl || null,
-    link_preview_url: previewImg || null,
     note: note || null,
     images: JSON.stringify(pendingResultImages || [])
   };
@@ -3126,7 +3083,6 @@ async function saveResult() {
     calendarResults[editingResultScenarioId] = {
       id: editingResultId || (calendarResults[editingResultScenarioId] ? calendarResults[editingResultScenarioId].id : null),
       ig_url: igUrl,
-      link_preview_url: previewImg || '',
       images: [...(pendingResultImages || [])],
       note
     };
@@ -3456,21 +3412,6 @@ function extractFirstUrl(text) {
   return m ? m[0] : null;
 }
 
-// Один запрос Microlink только при сохранении — URL картинки кладём в Supabase, на экране Microlink не дергаем
-async function fetchMicrolinkImageOnce(url) {
-  if (!url) return null;
-  try {
-    const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=true`);
-    if (!res.ok) return null;
-    const json = await res.json();
-    if (!json || json.status !== 'success' || !json.data) return null;
-    const img = json.data.image && json.data.image.url;
-    return img || null;
-  } catch (e) {
-    return null;
-  }
-}
-
 function escapeAttr(str) {
   return (str || '')
     .replace(/&/g, '&amp;')
@@ -3503,46 +3444,10 @@ function renderLinkPreview(text) {
   `;
 }
 
-// Карточка сценария: сначала картинка из БД (link_preview_url), иначе старый режим через Microlink в браузере
-function renderScenarioLinkPreviewBlock(s) {
-  if (!s.description) return '';
-  const url = extractFirstUrl(s.description);
-  if (!url) return '';
-  if (s.link_preview_url) {
-    let domain = '';
-    try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch (e) {}
-    const safeTitle = escapeHtml(domain || url);
-    const safeDomain = escapeHtml(domain);
-    return `
-    <a class="link-preview" href="${escapeAttr(url)}" target="_blank" rel="noopener">
-      <img class="link-preview-img" src="${escapeAttr(s.link_preview_url)}" onerror="this.style.display='none'">
-      <div class="link-preview-body">
-        <div class="link-preview-title">${safeTitle}</div>
-        <div class="link-preview-domain">${safeDomain}</div>
-      </div>
-    </a>`;
-  }
-  return renderLinkPreview(s.description);
-}
-
-// Предпросмотр ссылки: если есть сохранённая картинка (из БД) — без Microlink; иначе старый режим / просто ссылка
-function renderLinkPreviewOrLink(url, storedImageUrl) {
+// Предпросмотр ссылки: если карточка ещё не готова — показываем просто ссылку.
+function renderLinkPreviewOrLink(url) {
   const safeUrl = escapeAttr(url || '');
   if (!url) return '';
-  if (storedImageUrl) {
-    let domain = '';
-    try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch (e) {}
-    const safeTitle = escapeHtml(domain || url);
-    const safeDomain = escapeHtml(domain);
-    return `
-    <a class="link-preview" href="${safeUrl}" target="_blank" rel="noopener">
-      <img class="link-preview-img" src="${escapeAttr(storedImageUrl)}" onerror="this.style.display='none'">
-      <div class="link-preview-body">
-        <div class="link-preview-title">${safeTitle}</div>
-        <div class="link-preview-domain">${safeDomain}</div>
-      </div>
-    </a>`;
-  }
   const preview = renderLinkPreview(url);
   if (preview) return preview;
   return `<a href="${safeUrl}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;word-break:break-all">${escapeHtml(url)}</a>`;
