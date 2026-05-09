@@ -523,6 +523,20 @@
     padding: 10px 0;
   }
 
+  /* ── РЕЖИМ "только календарь" (роль calendar) ──
+     Прячем всё лишнее и оставляем только календарный план. */
+  body.calendar-only {
+    padding-bottom: 0;
+  }
+  body.calendar-only header,
+  body.calendar-only #main-content,
+  body.calendar-only .bottom-nav,
+  body.calendar-only #fab,
+  body.calendar-only #batch-bar,
+  body.calendar-only #fast-scroll-track {
+    display: none !important;
+  }
+
   /* ── FULLSCREEN MODAL ── */
   .overlay {
     display: none; position: fixed; inset: 0;
@@ -909,12 +923,26 @@
   <div style="font-size:13px;color:var(--muted);margin-bottom:40px">Введи пароль для входа</div>
 
   <div style="width:100%;max-width:320px;display:flex;flex-direction:column;gap:12px">
-    <input id="login-input" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="Пароль..." style="
-      width:100%;padding:14px 16px;background:var(--surface);
-      border:1.5px solid var(--border);border-radius:14px;
-      font-family:'Inter',sans-serif;font-size:16px;color:var(--text);
-      outline:none;text-align:center;letter-spacing:3px;
-    " onkeydown="if(event.key==='Enter')doLogin()">
+    <!-- Поле пароля + кнопка "глазик" (показать/скрыть пароль) -->
+    <div style="position:relative;width:100%">
+      <input id="login-input" type="password" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" placeholder="Пароль..." style="
+        width:100%;padding:14px 44px 14px 16px;background:var(--surface);
+        border:1.5px solid var(--border);border-radius:14px;
+        font-family:'Inter',sans-serif;font-size:16px;color:var(--text);
+        outline:none;text-align:center;letter-spacing:3px;
+      " onkeydown="if(event.key==='Enter')doLogin()">
+      <button type="button" id="login-eye" onclick="toggleLoginPassword()" aria-label="Показать пароль" title="Показать пароль" style="
+        position:absolute;right:10px;top:50%;transform:translateY(-50%);
+        width:34px;height:34px;border-radius:10px;border:1.5px solid var(--border);
+        background:var(--surface2);color:var(--text2);cursor:pointer;
+        display:flex;align-items:center;justify-content:center;
+      ">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+      </button>
+    </div>
 
     <button onclick="doLogin()" style="
       width:100%;padding:14px;background:var(--accent);color:#fff;
@@ -1096,7 +1124,7 @@
 <!-- Calendar Modal -->
 <div class="overlay" id="calendar-overlay">
   <div class="modal-header">
-    <button class="modal-back" onclick="closeCalendarModal()">
+    <button class="modal-back" id="calendar-back-btn" onclick="closeCalendarModal()">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
     <div class="modal-header-title">Календарный план</div>
@@ -1223,6 +1251,18 @@
   </div>
 </div>
 
+<!-- Массовый перенос сценариев в проект -->
+<div class="proj-overlay" id="bulk-move-overlay" onclick="closeBulkMoveOutside(event)">
+  <div class="proj-modal" style="padding-bottom:26px">
+    <div class="modal-handle"></div>
+    <div class="proj-title">Перенести в проект</div>
+    <div id="bulk-move-list" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-cancel" onclick="closeBulkMove()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
 <!-- Project Modal (bottom sheet) -->
 <div class="proj-overlay" id="project-overlay" onclick="closeProjectModalOutside(event)">
   <div class="proj-modal">
@@ -1278,6 +1318,7 @@
   <button class="batch-btn" onclick="bulkSetStatus('active')">В активные</button>
   <button class="batch-btn" onclick="bulkSetStatus('draft')">В доработку</button>
   <button class="batch-btn" onclick="bulkSetStatus('done')">В готово</button>
+  <button class="batch-btn" onclick="openBulkMove()">В проект</button>
   <button class="batch-btn" onclick="bulkCopyScenarios()">Копировать</button>
   <button class="batch-btn danger" onclick="bulkDeleteScenarios()">Удалить</button>
   <button class="batch-btn" onclick="toggleSelectionMode(false)">Закрыть</button>
@@ -1497,33 +1538,54 @@ async function init() {
     projects = await api('/rest/v1/projects?select=*&order=created_at.asc');
     persistProjectsCache();
 
-    // ⚠️ Фиксируем приложение на проекте №1 (чтобы ничего не сохранялось "не туда")
-    projects = projects.filter(p => p.id === 1);
-
     // Viewer: only show their project
     if (currentRole === 'viewer' && viewerProjectId) {
       projects = projects.filter(p => p.id === parseInt(viewerProjectId));
     }
 
-    if (projects.length > 0) {
+    // Роль "calendar": всегда работаем строго с проектом №1
+    if (currentRole === 'calendar') {
+      projects = projects.filter(p => p.id === 1);
       currentProjectId = 1;
+    }
+
+    if (projects.length > 0) {
+      if (!currentProjectId) currentProjectId = projects[0].id;
       await loadScenarios();
     } else showNoProject();
     renderNav();
     syncOfflineQueue();
+
+    // Роль "calendar": сразу открываем календарь и прячем кнопку "назад"
+    if (currentRole === 'calendar') {
+      openCalendarModal();
+      const backBtn = document.getElementById('calendar-back-btn');
+      if (backBtn) backBtn.style.display = 'none';
+    }
   } catch(e) {
     if (projects.length > 0) {
       if (currentRole === 'viewer' && viewerProjectId) {
         projects = projects.filter(p => p.id === parseInt(viewerProjectId));
       }
-      projects = (projects || []).filter(p => p.id === 1);
-      currentProjectId = 1;
+      // В оффлайне тоже учитываем роль calendar (проект 1)
+      if (currentRole === 'calendar') {
+        projects = (projects || []).filter(p => p.id === 1);
+        currentProjectId = 1;
+      } else {
+        currentProjectId = projects[0] ? projects[0].id : null;
+      }
       if (currentProjectId) {
         scenarios = scenariosByProjectCache[currentProjectId] || [];
         render();
       } else showNoProject();
       renderNav();
       showToast('Оффлайн режим');
+
+      if (currentRole === 'calendar') {
+        openCalendarModal();
+        const backBtn = document.getElementById('calendar-back-btn');
+        if (backBtn) backBtn.style.display = 'none';
+      }
     } else {
       document.getElementById('main-content').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Ошибка загрузки.</p></div>`;
     }
@@ -1573,8 +1635,6 @@ function renderNav() {
 }
 
 async function switchProject(id) {
-  // Проекты зафиксированы на №1
-  return;
   if (id === currentProjectId) return;
   selectionMode = false;
   selectedScenarioIds.clear();
@@ -2026,6 +2086,8 @@ window.addEventListener('popstate', () => {
     closeLightbox(true);
   } else if (document.getElementById('calendar-pick-overlay').classList.contains('open')) {
     closeCalendarPick(true);
+  } else if (document.getElementById('bulk-move-overlay') && document.getElementById('bulk-move-overlay').classList.contains('open')) {
+    closeBulkMove(true);
   } else if (document.getElementById('day-result-overlay') && document.getElementById('day-result-overlay').classList.contains('open')) {
     closeDayResultModal(true);
   } else if (document.getElementById('result-overlay') && document.getElementById('result-overlay').classList.contains('open')) {
@@ -2558,6 +2620,8 @@ function openCalendarModal() {
 }
 
 function closeCalendarModal(fromPopState = false) {
+  // Роль "calendar": календарь всегда на экране, закрывать его не надо
+  if (currentRole === 'calendar') return;
   const overlay = document.getElementById('calendar-overlay');
   if (!fromPopState && overlay && overlay.classList.contains('open')) {
     history.back();
@@ -3525,6 +3589,70 @@ async function bulkCopyScenarios() {
   }
 }
 
+// ── Массовый перенос в другой проект ──
+function openBulkMove() {
+  if (!isAdmin()) return;
+  const selected = getSelectedScenarios();
+  if (selected.length === 0) { showToast('Ничего не выбрано'); return; }
+
+  const overlay = document.getElementById('bulk-move-overlay');
+  const list = document.getElementById('bulk-move-list');
+  if (!overlay || !list) return;
+
+  // Чтобы кнопка "назад" закрывала окно
+  history.pushState({ modal: 'bulk_move' }, '');
+
+  // Список проектов, кроме текущего
+  const options = projects.filter(p => p.id !== currentProjectId);
+  if (options.length === 0) {
+    list.innerHTML = `<div class="calendar-plan-empty">Нет других проектов</div>`;
+  } else {
+    list.innerHTML = options.map(p => `
+      <button class="calendar-plan-item" style="text-align:left;cursor:pointer" onclick="bulkMoveToProject(${p.id})">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:10px;height:10px;border-radius:50%;background:${p.color || '#999'}"></div>
+          <div style="font-weight:800">${escapeHtml(p.name || 'Проект')}</div>
+        </div>
+      </button>
+    `).join('');
+  }
+
+  overlay.classList.add('open');
+}
+
+function closeBulkMove(fromPopState = false) {
+  const overlay = document.getElementById('bulk-move-overlay');
+  if (!fromPopState && overlay && overlay.classList.contains('open')) {
+    history.back();
+    return;
+  }
+  if (overlay) overlay.classList.remove('open');
+}
+
+function closeBulkMoveOutside(e) {
+  if (e.target === document.getElementById('bulk-move-overlay')) closeBulkMove(false);
+}
+
+async function bulkMoveToProject(targetProjectId) {
+  const selected = getSelectedScenarios();
+  if (selected.length === 0) { showToast('Ничего не выбрано'); closeBulkMove(); return; }
+  if (!confirm(`Перенести сценарии (${selected.length}) в другой проект?`)) return;
+
+  try {
+    await Promise.all(selected.map(s => api(`/rest/v1/scenarios?id=eq.${s.id}`, 'PATCH', { project_id: targetProjectId })));
+    // Убираем из текущего списка (они переехали)
+    scenarios = scenarios.filter(s => !selectedScenarioIds.has(s.id));
+    persistScenariosCache();
+    selectedScenarioIds.clear();
+    selectionMode = false;
+    closeBulkMove(true);
+    render();
+    showToast('Перенесено');
+  } catch (e) {
+    showToast('Ошибка переноса');
+  }
+}
+
 function updateFastScroll() {
   const track = document.getElementById('fast-scroll-track');
   const thumb = document.getElementById('fast-scroll-thumb');
@@ -3625,12 +3753,28 @@ function initFastScroll() {
 }
 
 // ── AUTH ──
-let currentRole = null; // 'admin' or 'viewer'
+let currentRole = null; // 'admin' | 'viewer' | 'calendar'
 let viewerProjectId = null;
 
 async function doLogin() {
-  const code = document.getElementById('login-input').value.trim();
+  const raw = (document.getElementById('login-input').value || '');
+  // Берём только цифры (на телефоне иногда вставляется пробел/символы)
+  const code = raw.replace(/\D/g, '');
+  document.getElementById('login-error').style.display = 'none';
   if (!code) return;
+
+  // Простая "секретка" для роли "calendar" (только просмотр календаря)
+  if (code === '1111') {
+    currentRole = 'calendar';
+    viewerProjectId = 1;
+    sessionStorage.setItem('role', currentRole);
+    sessionStorage.setItem('code', code);
+    sessionStorage.setItem('vpid', '1');
+    applyRole();
+    document.getElementById('login-screen').style.display = 'none';
+    init();
+    return;
+  }
   try {
     const res = await api(`/rest/v1/access_codes?code=eq.${encodeURIComponent(code)}&select=*`);
     if (!res || res.length === 0) {
@@ -3653,13 +3797,34 @@ async function doLogin() {
 
 function applyRole() {
   if (currentRole === 'viewer') {
-    // Hide all edit controls
+    // Viewer: прячем любые кнопки редактирования сценариев
     document.getElementById('fab').style.display = 'none';
     document.querySelectorAll('.nav-add-project').forEach(el => el.style.display = 'none');
+    return;
+  }
+
+  if (currentRole === 'calendar') {
+    // Calendar-only: человек видит только календарный план (без вкладок и редактирования)
+    document.body.classList.add('calendar-only');
+    document.getElementById('fab').style.display = 'none';
+    document.querySelectorAll('.nav-add-project').forEach(el => el.style.display = 'none');
+    return;
   }
 }
 
 function isAdmin() { return currentRole === 'admin'; }
+
+function toggleLoginPassword() {
+  // "Глазик" на экране входа: показываем/скрываем пароль
+  const inp = document.getElementById('login-input');
+  const btn = document.getElementById('login-eye');
+  if (!inp || !btn) return;
+  const isHidden = inp.type === 'password';
+  inp.type = isHidden ? 'text' : 'password';
+  btn.setAttribute('aria-label', isHidden ? 'Скрыть пароль' : 'Показать пароль');
+  btn.setAttribute('title', isHidden ? 'Скрыть пароль' : 'Показать пароль');
+  inp.focus();
+}
 
 // Check session on load
 (function checkSession() {
