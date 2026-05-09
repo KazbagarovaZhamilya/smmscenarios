@@ -3668,10 +3668,7 @@ let currentRole = null; // 'admin' | 'viewer' | 'calendar'
 let viewerProjectId = null;
 
 async function doLogin() {
-  const raw = (document.getElementById('login-input').value || '');
-  // Берём только цифры (на телефоне иногда вставляется пробел/символы)
-  const code = raw.replace(/\D/g, '');
-  document.getElementById('login-error').style.display = 'none';
+  const code = document.getElementById('login-input').value.trim();
   if (!code) return;
   
   // Простая "секретка" для роли "calendar" (только просмотр календаря).
@@ -3683,6 +3680,7 @@ async function doLogin() {
     sessionStorage.setItem('code', code);
     sessionStorage.setItem('vpid', '1');
     applyRole();
+    document.getElementById('login-error').style.display = 'none';
     document.getElementById('login-screen').style.display = 'none';
     init();
     return;
