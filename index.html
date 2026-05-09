@@ -2888,14 +2888,9 @@ function updateDayResultIgPreview() {
   if (!input || !box) return;
   const url = (input.value || '').trim();
   if (!url) { box.innerHTML = ''; return; }
-  // Только сохранённое превью из БД — без Microlink при каждом символе (иначе 429)
   let stored = '';
   if (dayResult && dayResult.ig_url === url && dayResult.link_preview_url) stored = dayResult.link_preview_url;
-  if (stored) {
-    box.innerHTML = renderLinkPreviewOrLink(url, stored);
-  } else {
-    box.innerHTML = `<a href="${escapeAttr(url)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;font-size:13px;word-break:break-all">${escapeHtml(url)}</a>`;
-  }
+  box.innerHTML = renderLinkPreviewOrLink(url, stored);
 }
 
 function renderDayResultThumbs() {
@@ -3044,11 +3039,7 @@ function updateResultIgPreview() {
   let stored = '';
   const res = editingResultScenarioId ? calendarResults[editingResultScenarioId] : null;
   if (res && res.ig_url === url && res.link_preview_url) stored = res.link_preview_url;
-  if (stored) {
-    box.innerHTML = renderLinkPreviewOrLink(url, stored);
-  } else {
-    box.innerHTML = `<a href="${escapeAttr(url)}" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:underline;font-size:13px;word-break:break-all">${escapeHtml(url)}</a>`;
-  }
+  box.innerHTML = renderLinkPreviewOrLink(url, stored);
 }
 
 function closeResultModalOutside(e) {
