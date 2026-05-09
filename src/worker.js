@@ -1,5 +1,6 @@
 /**
- * Cloudflare Worker: статика + опциональный прокси /preview → jsonlink.io (старый Microlink убран)
+ * Cloudflare Worker: раздача статики + прокси Microlink по пути /preview
+ * Браузер бьёт на свой домен → меньше странностей с лимитами, чем прямой api.microlink.io
  */
 export default {
   async fetch(request, env) {
@@ -16,8 +17,13 @@ export default {
           },
         });
       }
-      const upstream = `https://jsonlink.io/api/extract?url=${encodeURIComponent(target)}`;
-      const r = await fetch(upstream);
+      const microlinkUrl = `https://api.microlink.io/?url=${encodeURIComponent(target)}&meta=true`;
+      const r = await fetch(microlinkUrl, {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        },
+      });
       const body = await r.text();
       return new Response(body, {
         status: r.status,
