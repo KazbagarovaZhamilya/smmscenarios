@@ -1477,16 +1477,13 @@ async function init() {
     projects = await api('/rest/v1/projects?select=*&order=created_at.asc');
     persistProjectsCache();
 
-    // ⚠️ Фиксируем приложение на проекте №1 (чтобы ничего не сохранялось "не туда")
-    projects = projects.filter(p => p.id === 1);
-
     // Viewer: only show their project
     if (currentRole === 'viewer' && viewerProjectId) {
       projects = projects.filter(p => p.id === parseInt(viewerProjectId));
     }
 
     if (projects.length > 0) {
-      currentProjectId = 1;
+      currentProjectId = projects[0].id;
       await loadScenarios();
     } else showNoProject();
     renderNav();
@@ -1496,8 +1493,7 @@ async function init() {
       if (currentRole === 'viewer' && viewerProjectId) {
         projects = projects.filter(p => p.id === parseInt(viewerProjectId));
       }
-      projects = (projects || []).filter(p => p.id === 1);
-      currentProjectId = 1;
+      currentProjectId = projects[0] ? projects[0].id : null;
       if (currentProjectId) {
         scenarios = scenariosByProjectCache[currentProjectId] || [];
         render();
@@ -1553,8 +1549,6 @@ function renderNav() {
 }
 
 async function switchProject(id) {
-  // Проекты зафиксированы на №1
-  return;
   if (id === currentProjectId) return;
   selectionMode = false;
   selectedScenarioIds.clear();
