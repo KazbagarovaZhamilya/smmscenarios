@@ -3345,6 +3345,8 @@ async function fetchLinkPreviewOnce(url) {
     image: d.image || '',
     domain: d.domain || domain
   };
+  // Если сервис не дал картинку — считаем превью неуспешным (чтобы можно было попробовать ещё раз позже).
+  if (!linkPreviewCache[url].image) linkPreviewCache[url] = { failed: true };
   persistLinkPreviewCacheSoon();
 }
 
@@ -3380,7 +3382,18 @@ async function drainLinkPreviewQueue() {
 
 function fetchLinkPreview(url) {
   // Публичная функция: ставим URL в очередь
-  if (!url || linkPreviewCache[url] || linkPreviewLoading.has(url) || linkPreviewQueued.has(url)) return;
+  if (!url || linkPreviewLoading.has(url) || linkPreviewQueued.has(url)) return;
+  // Если в кэше лежит запись без картинки (или старая неудачная) — пробуем обновить.
+  // Это нужно, потому что превью могло сохраниться "пустым", а теперь сервер умеет отдавать картинку.
+  if (linkPreviewCache[url]) {
+    const c = linkPreviewCache[url];
+    if (c && c.failed) return;
+    if (c && !c.image) {
+      try { delete linkPreviewCache[url]; } catch (e) {}
+    } else {
+      return;
+    }
+  }
   linkPreviewQueued.add(url);
   linkPreviewQueue.push(url);
   drainLinkPreviewQueue();
