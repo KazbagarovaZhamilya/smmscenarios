@@ -5,6 +5,18 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // Браузер с другого домена (Netlify + LINK_PREVIEW_PROXY_ORIGIN на Worker) шлёт preflight
+    if (request.method === 'OPTIONS' && url.pathname === '/preview') {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+          'Access-Control-Max-Age': '86400',
+        },
+      });
+    }
+
     if (url.pathname === '/preview') {
       const target = url.searchParams.get('url');
       if (!target) {
