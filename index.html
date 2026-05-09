@@ -639,6 +639,14 @@
     align-items: flex-end; backdrop-filter: blur(2px);
   }
   .proj-overlay.open { display: flex; }
+
+  /* Календарь: убираем прозрачность у слоя выбора сценария.
+     Раньше фон был полупрозрачный (через rgba(..., 0.45)), из‑за этого "просвечивало".
+     Здесь делаем фон полностью непрозрачным. */
+  #calendar-pick-overlay {
+    background: var(--bg);
+    backdrop-filter: none;
+  }
   .proj-modal {
     background: var(--surface); border-radius: 24px 24px 0 0;
     padding: 20px 18px 44px; width: 100%;
