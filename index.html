@@ -1332,8 +1332,8 @@ const H = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, '
   alter table public.day_results add column if not exists link_preview_url text;
   alter table public.scenario_results add column if not exists link_preview_url text;
 */
-// jsonlink.io из браузера даёт CORS/403 — запросы только через Worker /preview (на Cloudflare тот же домен).
-// Если откроешь сайт с Netlify/GitHub Pages без Worker — впиши сюда URL Worker, например: 'https://smmscenarios.iritual.workers.dev'
+// jsonlink из браузера = CORS. Запросы через /preview (на workers.dev — тот же сайт, origin совпадает).
+// Сайт только на Netlify (без Worker) — впиши рабочий URL Cloudflare-деплоя, иначе превью в ленте не подтянутся: 'https://smmscenarios.iritual.workers.dev'
 const LINK_PREVIEW_PROXY_ORIGIN = '';
 // Названия бакетов (папок) в Supabase Storage
 // scenarios — фото/файлы внутри карточек сценариев
