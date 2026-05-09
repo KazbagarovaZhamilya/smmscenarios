@@ -1338,6 +1338,23 @@ let editingDayResultId = null;
 let pendingDayResultImages = [];
 let dayResultsByDate = {}; // dateStr -> { id, ig_url, images[], note }
 
+async function getPreviewImageUrl(url) {
+  // Получаем картинку превью через Supabase Edge Function (серверный запрос)
+  if (!url) return '';
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/link-preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+      body: JSON.stringify({ url })
+    });
+    if (!res.ok) return '';
+    const json = await res.json();
+    return json && json.image ? String(json.image) : '';
+  } catch (e) {
+    return '';
+  }
+}
+
 function isNetworkError(e) {
   const msg = (e && e.message ? e.message : String(e || '')).toLowerCase();
   return !navigator.onLine || msg.includes('failed to fetch') || msg.includes('networkerror');
@@ -2315,7 +2332,7 @@ async function loadDayResultForDate(dateStr) {
     if (rows && rows[0]) {
       const r = rows[0];
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
-      dayResult = { id: r.id, ig_url: r.ig_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
+      dayResult = { id: r.id, ig_url: r.ig_url || '', link_preview_url: r.link_preview_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
       editingDayResultId = r.id;
       // Обновляем кэш по месяцу, чтобы превью появлялось в самой клетке даты
       dayResultsByDate[dateStr] = { ...dayResult };
@@ -2339,7 +2356,7 @@ async function loadDayResultsForMonth(monthDate) {
     (rows || []).forEach(r => {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       const d = String(r.date);
-      dayResultsByDate[d] = { id: r.id, ig_url: r.ig_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
+      dayResultsByDate[d] = { id: r.id, ig_url: r.ig_url || '', link_preview_url: r.link_preview_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
       if (dayResultsByDate[d].ig_url) fetchLinkPreview(dayResultsByDate[d].ig_url);
     });
   } catch (e) {
@@ -2449,6 +2466,45 @@ async function unlinkScenarioFromDate(ev, id) {
   showToast('Отвязано');
 }
 
+async function backfillDayResultPreviewUrls() {
+  // Заполняем link_preview_url у старых "Отчетов дня" (для быстрых превью в календаре)
+  if (!isAdmin()) return;
+  if (!currentProjectId) { showToast('Нет проекта'); return; }
+  if (!confirm('Заполнить превью (картинки) для старых отчетов дня? Это может занять несколько минут.')) return;
+
+  showToast('Ищу отчеты без превью...');
+  let rows = [];
+  try {
+    // Берём только те, где есть ссылка и нет сохранённой картинки
+    rows = await api(`/rest/v1/day_results?select=id,date,ig_url,link_preview_url&project_id=eq.${currentProjectId}&ig_url=not.is.null&link_preview_url=is.null&order=date.asc`);
+  } catch (e) {
+    showToast('Ошибка: в таблице day_results нет поля link_preview_url');
+    return;
+  }
+  if (!rows || rows.length === 0) { showToast('Все превью уже заполнены'); return; }
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const url = (r.ig_url || '').trim();
+    if (!url) continue;
+    showToast(`Превью: ${i + 1}/${rows.length}`);
+    const img = await getPreviewImageUrl(url);
+    if (!img) continue;
+    try {
+      await api(`/rest/v1/day_results?id=eq.${r.id}`, 'PATCH', { link_preview_url: img });
+      const d = String(r.date);
+      if (dayResultsByDate && dayResultsByDate[d]) dayResultsByDate[d].link_preview_url = img;
+    } catch (e) {
+      // тихо, идём дальше
+    }
+    // Пауза, чтобы не спамить (Microlink внутри функции тоже имеет лимиты)
+    await new Promise(res => setTimeout(res, 900));
+  }
+
+  showToast('Готово: превью заполнены');
+  renderCalendar();
+}
+
 function renderCalendar() {
   const title = document.getElementById('calendar-month-title');
   const grid = document.getElementById('calendar-grid');
@@ -2483,8 +2539,9 @@ function renderCalendar() {
     // Мини-превью опубликованного ролика (если есть отчет дня с ссылкой)
     const dr = drAny || (dateStr === calendarSelectedDate ? dayResult : null);
     const pubUrl = dr && dr.ig_url ? dr.ig_url : '';
+    const storedPreview = dr && dr.link_preview_url ? String(dr.link_preview_url) : '';
     const cached = pubUrl ? linkPreviewCache[pubUrl] : null;
-    const pubImg = cached && !cached.failed && cached.image ? cached.image : '';
+    const pubImg = storedPreview || (cached && !cached.failed && cached.image ? cached.image : '');
 
     cells.push(`
       <!-- Важно: не делаем "кнопку в кнопке". Иначе маленький "+" может не показываться/не нажиматься -->
@@ -2507,7 +2564,11 @@ function renderCalendar() {
 
   // Убрали верхний дублирующий заголовок "Отчет дня".
   const act = document.getElementById('calendar-day-report-actions');
-  if (act) act.innerHTML = '';
+  if (act) {
+    act.innerHTML = isAdmin()
+      ? `<button class="batch-btn" style="width:100%" onclick="backfillDayResultPreviewUrls()">Заполнить превью старым отчетам</button>`
+      : '';
+  }
 
   renderCalendarPlanList();
 }
@@ -2756,10 +2817,13 @@ async function saveDayResult() {
   if (!isPastDate(calendarSelectedDate)) { showToast('Только для прошедших дат'); return; }
   const igUrl = (document.getElementById('day-result-ig-url').value || '').trim();
   const note = (document.getElementById('day-result-note').value || '').trim();
+  // Картинка превью — сохраним сразу в базу, чтобы календарь грузился быстро
+  const previewUrl = igUrl ? await getPreviewImageUrl(igUrl) : '';
   const payload = {
     project_id: currentProjectId,
     date: calendarSelectedDate,
     ig_url: igUrl || null,
+    link_preview_url: previewUrl || null,
     note: note || null,
     images: JSON.stringify(pendingDayResultImages || [])
   };
@@ -2770,7 +2834,7 @@ async function saveDayResult() {
       const created = await api('/rest/v1/day_results', 'POST', payload);
       if (created && created[0]) editingDayResultId = created[0].id;
     }
-    dayResult = { id: editingDayResultId, ig_url: igUrl, images: [...(pendingDayResultImages || [])], note };
+    dayResult = { id: editingDayResultId, ig_url: igUrl, link_preview_url: previewUrl || '', images: [...(pendingDayResultImages || [])], note };
     // Обновляем кэш по месяцу, чтобы превью появлялось в календаре сразу
     dayResultsByDate[calendarSelectedDate] = { ...dayResult };
     if (igUrl) fetchLinkPreview(igUrl);
