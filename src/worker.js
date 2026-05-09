@@ -29,21 +29,12 @@ export default {
         });
       }
       const upstream = `https://jsonlink.io/api/extract?url=${encodeURIComponent(target)}`;
-      // Без User-Agent jsonlink.io часто отвечает 403 (считает запрос «ботом с дата-центра»)
-      const r = await fetch(upstream, {
-        headers: {
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          Accept: 'application/json, text/plain, */*',
-          'Accept-Language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
-        },
-      });
+      const r = await fetch(upstream);
       const body = await r.text();
-      const ct = r.headers.get('content-type') || '';
       return new Response(body, {
         status: r.status,
         headers: {
-          'Content-Type': ct.includes('json') ? 'application/json' : 'text/plain; charset=utf-8',
+          'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': '*',
         },
       });
