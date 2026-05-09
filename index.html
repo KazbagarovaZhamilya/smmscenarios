@@ -1228,6 +1228,18 @@
   </div>
 </div>
 
+<!-- Массовый перенос сценариев в проект -->
+<div class="proj-overlay" id="bulk-move-overlay" onclick="closeBulkMoveOutside(event)">
+  <div class="proj-modal" style="padding-bottom:26px">
+    <div class="modal-handle"></div>
+    <div class="proj-title">Перенести в проект</div>
+    <div id="bulk-move-list" style="display:flex;flex-direction:column;gap:8px"></div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn btn-cancel" onclick="closeBulkMove()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
 <!-- Project Modal (bottom sheet) -->
 <div class="proj-overlay" id="project-overlay" onclick="closeProjectModalOutside(event)">
   <div class="proj-modal">
@@ -1283,6 +1295,7 @@
   <button class="batch-btn" onclick="bulkSetStatus('active')">В активные</button>
   <button class="batch-btn" onclick="bulkSetStatus('draft')">В доработку</button>
   <button class="batch-btn" onclick="bulkSetStatus('done')">В готово</button>
+  <button class="batch-btn" onclick="openBulkMove()">В проект</button>
   <button class="batch-btn" onclick="bulkCopyScenarios()">Копировать</button>
   <button class="batch-btn danger" onclick="bulkDeleteScenarios()">Удалить</button>
   <button class="batch-btn" onclick="toggleSelectionMode(false)">Закрыть</button>
@@ -2039,6 +2052,8 @@ window.addEventListener('popstate', () => {
     closeLightbox(true);
   } else if (document.getElementById('calendar-pick-overlay').classList.contains('open')) {
     closeCalendarPick(true);
+  } else if (document.getElementById('bulk-move-overlay') && document.getElementById('bulk-move-overlay').classList.contains('open')) {
+    closeBulkMove(true);
   } else if (document.getElementById('day-result-overlay') && document.getElementById('day-result-overlay').classList.contains('open')) {
     closeDayResultModal(true);
   } else if (document.getElementById('result-overlay') && document.getElementById('result-overlay').classList.contains('open')) {
@@ -3470,6 +3485,85 @@ async function bulkCopyScenarios() {
   }
 }
 
+// ── Массовый перенос в другой проект ──
+function openBulkMove() {
+  if (!isAdmin()) return;
+  const selected = getSelectedScenarios();
+  if (selected.length === 0) { showToast('Ничего не выбрано'); return; }
+
+  const overlay = document.getElementById('bulk-move-overlay');
+  const list = document.getElementById('bulk-move-list');
+  if (!overlay || !list) return;
+
+  // Чтобы кнопка "назад" на телефоне закрывала это окно
+  history.pushState({ modal: 'bulk_move' }, '');
+
+  // Список проектов, кроме текущего
+  const options = projects.filter(p => p.id !== currentProjectId);
+  if (options.length === 0) {
+    list.innerHTML = `<div class="calendar-plan-empty">Нет других проектов</div>`;
+  } else {
+    list.innerHTML = options.map(p => `
+      <button class="calendar-plan-item" style="text-align:left;cursor:pointer" onclick="bulkMoveToProject(${p.id})">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="width:10px;height:10px;border-radius:50%;background:${p.color || '#999'}"></div>
+          <div style="font-weight:800">${escapeHtml(p.name || 'Проект')}</div>
+        </div>
+      </button>
+    `).join('');
+  }
+
+  overlay.classList.add('open');
+}
+
+function closeBulkMove(fromPopState = false) {
+  // При закрытии через UI делаем history.back(), а реальное закрытие — через popstate
+  const overlay = document.getElementById('bulk-move-overlay');
+  if (!fromPopState && overlay && overlay.classList.contains('open')) {
+    history.back();
+    return;
+  }
+  if (overlay) overlay.classList.remove('open');
+}
+
+function closeBulkMoveOutside(e) {
+  if (e.target === document.getElementById('bulk-move-overlay')) closeBulkMove();
+}
+
+async function bulkMoveToProject(targetProjectId) {
+  const selected = getSelectedScenarios();
+  if (selected.length === 0) { showToast('Ничего не выбрано'); closeBulkMove(); return; }
+  if (!confirm(`Перенести сценарии (${selected.length}) в другой проект?`)) return;
+
+  try {
+    await Promise.all(selected.map(s => api(`/rest/v1/scenarios?id=eq.${s.id}`, 'PATCH', { project_id: targetProjectId })));
+    // Убираем из текущего списка (они переехали)
+    scenarios = scenarios.filter(s => !selectedScenarioIds.has(s.id));
+    persistScenariosCache();
+    selectedScenarioIds.clear();
+    selectionMode = false;
+    closeBulkMove();
+    render();
+    showToast('Перенесено');
+  } catch (e) {
+    // Если сеть упала — переносим локально и ставим в очередь
+    if (isNetworkError(e)) {
+      selected.forEach(s => {
+        enqueueOfflineOp({ type: 'scenario_update', id: s.id, payload: { project_id: targetProjectId } });
+      });
+      scenarios = scenarios.filter(s => !selectedScenarioIds.has(s.id));
+      persistScenariosCache();
+      selectedScenarioIds.clear();
+      selectionMode = false;
+      closeBulkMove();
+      render();
+      showToast('Нет сети: перенос в очереди');
+    } else {
+      showToast('Ошибка переноса');
+    }
+  }
+}
+
 function updateFastScroll() {
   const track = document.getElementById('fast-scroll-track');
   const thumb = document.getElementById('fast-scroll-thumb');
@@ -3576,6 +3670,22 @@ let viewerProjectId = null;
 async function doLogin() {
   const code = document.getElementById('login-input').value.trim();
   if (!code) return;
+  
+  // Простая "секретка" для роли "calendar" (только просмотр календаря).
+  // Если введен код 1111 — не ходим в базу, а сразу включаем доступ "calendar".
+  if (code === '1111') {
+    currentRole = 'calendar';
+    viewerProjectId = 1;
+    sessionStorage.setItem('role', currentRole);
+    sessionStorage.setItem('code', code);
+    sessionStorage.setItem('vpid', '1');
+    applyRole();
+    document.getElementById('login-error').style.display = 'none';
+    document.getElementById('login-screen').style.display = 'none';
+    init();
+    return;
+  }
+
   try {
     const res = await api(`/rest/v1/access_codes?code=eq.${encodeURIComponent(code)}&select=*`);
     if (!res || res.length === 0) {
