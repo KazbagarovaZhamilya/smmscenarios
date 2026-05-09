@@ -1325,8 +1325,6 @@ let syncingOfflineQueue = false;
 let calendarCurrentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let calendarSelectedDate = '';
 let calendarPickDate = ''; // дата, для которой сейчас выбираем сценарий через "+"
-const CALENDAR_PROJECT_ID = 1; // Календарь всегда работает только с проектом 1
-let calendarScenarios = []; // сценарии ТОЛЬКО проекта 1 (для календаря)
 let mediaLibrary = []; // список медиа из Supabase таблицы (общий для всех устройств)
 let mediaFilter = 'all'; // all | pending | approved
 let calendarResults = {}; // scenarioId -> { id, ig_url, images[], note }
@@ -1439,15 +1437,6 @@ async function api(path, method = 'GET', body = null) {
   if (!res.ok) throw new Error(await res.text());
   const text = await res.text();
   return text ? JSON.parse(text) : null;
-}
-
-async function loadCalendarScenarios() {
-  // Календарь работает только с проектом 1, независимо от выбранного проекта на главной
-  try {
-    calendarScenarios = await api(`/rest/v1/scenarios?select=*&project_id=eq.${CALENDAR_PROJECT_ID}&order=position.asc,created_at.asc`);
-  } catch (e) {
-    calendarScenarios = [];
-  }
 }
 
 // Загрузка файла с прогрессом (для фото/видео).
@@ -2303,7 +2292,7 @@ function formatDateLabelRu(dateStr) {
 
 function getCalendarItemsForDate(dateStr) {
   if (!dateStr) return [];
-  return calendarScenarios.filter(s => String(s.release_date || '') === dateStr);
+  return scenarios.filter(s => String(s.release_date || '') === dateStr);
 }
 
 function isPastDate(dateStr) {
@@ -2317,10 +2306,10 @@ function isPastDate(dateStr) {
 
 async function loadCalendarResultsForDate(dateStr) {
   calendarResults = {};
-  if (!dateStr) return;
+  if (!dateStr || !currentProjectId) return;
   if (!isPastDate(dateStr)) return;
   try {
-    const rows = await api(`/rest/v1/scenario_results?select=*&project_id=eq.${CALENDAR_PROJECT_ID}&date=eq.${dateStr}`);
+    const rows = await api(`/rest/v1/scenario_results?select=*&project_id=eq.${currentProjectId}&date=eq.${dateStr}`);
     (rows || []).forEach(r => {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       calendarResults[r.scenario_id] = {
@@ -2338,10 +2327,10 @@ async function loadCalendarResultsForDate(dateStr) {
 async function loadDayResultForDate(dateStr) {
   dayResult = null;
   editingDayResultId = null;
-  if (!dateStr) return;
+  if (!dateStr || !currentProjectId) return;
   if (!isPastDate(dateStr)) return;
   try {
-    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${CALENDAR_PROJECT_ID}&date=eq.${dateStr}`);
+    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=eq.${dateStr}`);
     if (rows && rows[0]) {
       const r = rows[0];
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
@@ -2359,13 +2348,13 @@ async function loadDayResultForDate(dateStr) {
 
 async function loadDayResultsForMonth(monthDate) {
   dayResultsByDate = {};
-  if (!monthDate) return;
+  if (!currentProjectId || !monthDate) return;
   try {
     const start = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
     const end = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
     const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
     const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
-    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${CALENDAR_PROJECT_ID}&date=gte.${startStr}&date=lte.${endStr}&order=date.asc`);
+    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=gte.${startStr}&date=lte.${endStr}&order=date.asc`);
     (rows || []).forEach(r => {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       const d = String(r.date);
@@ -2497,7 +2486,7 @@ function renderCalendar() {
 
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const count = calendarScenarios.filter(s => String(s.release_date || '') === dateStr).length;
+    const count = scenarios.filter(s => String(s.release_date || '') === dateStr).length;
     const selected = calendarSelectedDate === dateStr ? 'selected' : '';
 
     // Плюсик показываем только на выбранной дате, чтобы не нажимался случайно пальцем.
@@ -2564,10 +2553,7 @@ function selectCalendarDate(dateStr) {
 
 function changeCalendarMonth(delta) {
   calendarCurrentMonth = new Date(calendarCurrentMonth.getFullYear(), calendarCurrentMonth.getMonth() + delta, 1);
-  Promise.all([
-    loadCalendarScenarios(),
-    loadDayResultsForMonth(calendarCurrentMonth)
-  ]).finally(() => renderCalendar());
+  loadDayResultsForMonth(calendarCurrentMonth).finally(() => renderCalendar());
 }
 
 function openCalendarModal() {
@@ -2579,7 +2565,6 @@ function openCalendarModal() {
   history.pushState({ modal: 'calendar' }, '');
   document.getElementById('calendar-overlay').classList.add('open');
   Promise.all([
-    loadCalendarScenarios(),
     loadDayResultsForMonth(calendarCurrentMonth),
     loadDayResultForDate(calendarSelectedDate),
     loadCalendarResultsForDate(calendarSelectedDate)
@@ -2616,7 +2601,7 @@ function openCalendarScenarioPicker(ev, dateStr) {
   title.textContent = `Поставить на ${formatDateLabelRu(dateStr)}`;
 
   // Показываем только сценарии БЕЗ даты (чтобы планировать было быстро и без путаницы)
-  const withoutDate = calendarScenarios.filter(s => !s.release_date);
+  const withoutDate = scenarios.filter(s => !s.release_date);
   const sorted = [...withoutDate].sort((a, b) => {
     const pa = (a.position ?? 0), pb = (b.position ?? 0);
     if (pa !== pb) return pa - pb;
