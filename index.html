@@ -1326,7 +1326,7 @@ const SUPABASE_URL = 'https://ffytgashtdnaahntrudq.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZmeXRnYXNodGRuYWFobnRydWRxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc5OTgwMzEsImV4cCI6MjA5MzU3NDAzMX0.9erqgwkjDmmpnN0vJgc2oNnGjM7r_tMWihF3dTggswQ';
 const H = { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}`, 'Content-Type': 'application/json', 'Prefer': 'return=representation' };
 /*
-  Превью ссылок храним в БД (разово дергаем Microlink только при сохранении).
+  Превью ссылок храним в БД (при сохранении дергаем jsonlink.io и кладём URL картинки в колонку).
   Один раз выполни в Supabase → SQL Editor:
   alter table public.scenarios add column if not exists link_preview_url text;
   alter table public.day_results add column if not exists link_preview_url text;
@@ -3465,33 +3465,20 @@ function extractFirstUrl(text) {
   return m ? m[0] : null;
 }
 
-// Сначала прокси /preview (Worker). При 429 от прокси НЕ дергаем Microlink второй раз — было два 429 подряд в консоли
-async function fetchMicrolinkRaw(targetUrl) {
-  const enc = encodeURIComponent(targetUrl);
-  const direct = () => fetch(`https://api.microlink.io/?url=${enc}&meta=true`);
-  try {
-    const proxyRes = await fetch(`/preview?url=${enc}`);
-    const ct = (proxyRes.headers.get('content-type') || '').toLowerCase();
-    if (proxyRes.ok && ct.includes('application/json')) return proxyRes;
-    if (proxyRes.status === 429) return proxyRes;
-    // Нет Worker (Netlify и т.д.) — ответ не JSON / 404 — один запрос напрямую
-    if (proxyRes.status === 404 || !ct.includes('application/json')) return direct();
-  } catch (e) {
-    /* офлайн */
-  }
-  return direct();
-}
-
-// Один запрос Microlink только при сохранении — URL картинки кладём в Supabase
+// Превью при сохранении: jsonlink.io (часто без блокировок Cloudflare IP, в отличие от Microlink)
 async function fetchMicrolinkImageOnce(url) {
   if (!url) return null;
   try {
-    const res = await fetchMicrolinkRaw(url);
+    const res = await fetch(
+      `https://jsonlink.io/api/extract?url=${encodeURIComponent(url)}`
+    );
     if (!res.ok) return null;
     const json = await res.json();
-    if (!json || json.status !== 'success' || !json.data) return null;
-    const img = json.data.image && json.data.image.url;
-    return img || null;
+    const images = json.images;
+    if (!Array.isArray(images) || images.length === 0) return null;
+    const first = images[0];
+    if (typeof first === 'string') return first;
+    return (first && first.url) || null;
   } catch (e) {
     return null;
   }
@@ -3529,7 +3516,7 @@ function renderLinkPreview(text) {
   `;
 }
 
-// Карточка сценария: сначала картинка из БД (link_preview_url), иначе старый режим через Microlink в браузере
+// Карточка сценария: сначала картинка из БД (link_preview_url), иначе превью через jsonlink в браузере
 function renderScenarioLinkPreviewBlock(s) {
   if (!s.description) return '';
   const url = extractFirstUrl(s.description);
@@ -3551,7 +3538,7 @@ function renderScenarioLinkPreviewBlock(s) {
   return renderLinkPreview(s.description);
 }
 
-// Предпросмотр ссылки: если есть сохранённая картинка (из БД) — без Microlink; иначе старый режим / просто ссылка
+// Предпросмотр ссылки: сохранённая картинка из БД — без запроса к сервису превью
 function renderLinkPreviewOrLink(url, storedImageUrl) {
   const safeUrl = escapeAttr(url || '');
   if (!url) return '';
@@ -3583,27 +3570,38 @@ function rerenderAfterLinkPreview() {
   if (ro && ro.classList.contains('open')) updateResultIgPreview();
 }
 
-// Один запрос к Microlink; при 429 — пауза очереди (без шторма повторных setTimeout)
+// Один запрос jsonlink.io для «живого» превью в карточках; при 429 — пауза очереди
 async function fetchLinkPreviewOnce(url) {
-  const res = await fetchMicrolinkRaw(url);
-  if (res.status === 429) {
-    const ra = parseInt(res.headers.get('Retry-After') || '45', 10);
-    // Без платного ключа Microlink часто просит подождать дольше
-    const pauseMs = Math.min(Math.max(isNaN(ra) ? 45 : ra, 30), 180) * 1000;
-    return { rateLimited: true, pauseMs };
+  try {
+    const res = await fetch(
+      `https://jsonlink.io/api/extract?url=${encodeURIComponent(url)}`
+    );
+    if (res.status === 429) {
+      const ra = parseInt(res.headers.get('Retry-After') || '30', 10);
+      const pauseMs = Math.min(Math.max(isNaN(ra) ? 30 : ra, 15), 180) * 1000;
+      return { rateLimited: true, pauseMs };
+    }
+    if (!res.ok) throw new Error('preview failed');
+    const json = await res.json();
+    let domain = '';
+    try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch (e) {}
+    const images = json.images;
+    let imageUrl = '';
+    if (Array.isArray(images) && images.length > 0) {
+      const first = images[0];
+      imageUrl = typeof first === 'string' ? first : (first && first.url) || '';
+    }
+    linkPreviewCache[url] = {
+      title: json.title || domain || url,
+      image: imageUrl,
+      domain: domain
+    };
+    persistLinkPreviewCacheSoon();
+    return { ok: true };
+  } catch (e) {
+    linkPreviewCache[url] = { failed: true };
+    return { ok: false };
   }
-  const json = await res.json();
-  if (!json || json.status !== 'success' || !json.data) throw new Error('preview failed');
-  const d = json.data;
-  let domain = '';
-  try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch (e) {}
-  linkPreviewCache[url] = {
-    title: d.title || d.publisher || url,
-    image: (d.image && d.image.url) || '',
-    domain: domain
-  };
-  persistLinkPreviewCacheSoon();
-  return { ok: true };
 }
 
 // Ставим URL в очередь и обрабатываем по одному с паузой — так реже ловим 429
