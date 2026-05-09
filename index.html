@@ -2466,46 +2466,6 @@ async function unlinkScenarioFromDate(ev, id) {
   showToast('Отвязано');
 }
 
-async function backfillDayResultPreviewUrls() {
-  // Заполняем link_preview_url у старых "Отчетов дня" (для быстрых превью в календаре)
-  if (!isAdmin()) return;
-  if (!currentProjectId) { showToast('Нет проекта'); return; }
-  if (!confirm('Заполнить превью (картинки) для старых отчетов дня? Это может занять несколько минут.')) return;
-
-  showToast('Ищу отчеты без превью...');
-  let rows = [];
-  try {
-    // Берём только те, где есть ссылка и нет сохранённой картинки
-    // Важно: "пусто" может быть и NULL, и пустая строка
-    rows = await api(`/rest/v1/day_results?select=id,date,ig_url,link_preview_url&project_id=eq.${currentProjectId}&ig_url=not.is.null&or=(link_preview_url.is.null,link_preview_url.eq.)&order=date.asc`);
-  } catch (e) {
-    showToast('Ошибка: в таблице day_results нет поля link_preview_url');
-    return;
-  }
-  if (!rows || rows.length === 0) { showToast('Все превью уже заполнены'); return; }
-
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    const url = (r.ig_url || '').trim();
-    if (!url) continue;
-    showToast(`Превью: ${i + 1}/${rows.length}`);
-    const img = await getPreviewImageUrl(url);
-    if (!img) continue;
-    try {
-      await api(`/rest/v1/day_results?id=eq.${r.id}`, 'PATCH', { link_preview_url: img });
-      const d = String(r.date);
-      if (dayResultsByDate && dayResultsByDate[d]) dayResultsByDate[d].link_preview_url = img;
-    } catch (e) {
-      // тихо, идём дальше
-    }
-    // Пауза, чтобы не спамить (Microlink внутри функции тоже имеет лимиты)
-    await new Promise(res => setTimeout(res, 900));
-  }
-
-  showToast('Готово: превью заполнены');
-  renderCalendar();
-}
-
 function renderCalendar() {
   const title = document.getElementById('calendar-month-title');
   const grid = document.getElementById('calendar-grid');
@@ -2565,11 +2525,7 @@ function renderCalendar() {
 
   // Убрали верхний дублирующий заголовок "Отчет дня".
   const act = document.getElementById('calendar-day-report-actions');
-  if (act) {
-    act.innerHTML = isAdmin()
-      ? `<button class="batch-btn" style="width:100%" onclick="backfillDayResultPreviewUrls()">Заполнить превью старым отчетам</button>`
-      : '';
-  }
+  if (act) act.innerHTML = '';
 
   renderCalendarPlanList();
 }
