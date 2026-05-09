@@ -450,13 +450,16 @@
     position: absolute;
     inset: 3px;
     border-radius: 8px;
-    /* Лёгкая подложка для читаемости даты */
-    background: linear-gradient(180deg, rgba(254,252,247,0.82) 0%, rgba(254,252,247,0.18) 55%, rgba(254,252,247,0.00) 100%);
+    /* Превью в календаре: убираем полупрозрачную "вуаль".
+       Раньше тут был градиент с прозрачностью, из‑за этого картинка выглядела бледной. */
+    background: none;
     pointer-events: none;
   }
   .calendar-day-num {
     position: relative;
     z-index: 1;
+    /* Чтобы цифру было видно и без полупрозрачной подложки */
+    text-shadow: 0 1px 2px rgba(255,255,255,0.9), 0 0 1px rgba(0,0,0,0.25);
   }
   .calendar-dot, .calendar-add-btn {
     z-index: 2;
