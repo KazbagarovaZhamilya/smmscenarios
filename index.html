@@ -3468,28 +3468,16 @@ function extractFirstUrl(text) {
   return m ? m[0] : null;
 }
 
-// Прокси на том же сайте (или на Worker в LINK_PREVIEW_PROXY_ORIGIN) — jsonlink иначе блокирует браузер (CORS)
-function linkPreviewProxyUrl(targetUrl) {
-  const enc = encodeURIComponent(targetUrl);
-  const path = `/preview?url=${enc}`;
-  const base = (typeof LINK_PREVIEW_PROXY_ORIGIN === 'string' && LINK_PREVIEW_PROXY_ORIGIN.trim())
-    ? LINK_PREVIEW_PROXY_ORIGIN.trim().replace(/\/$/, '')
-    : '';
-  return base ? `${base}${path}` : path;
-}
-
-// Превью при сохранении: jsonlink через Worker /preview (не напрямую из браузера)
+// Превью ссылки — напрямую через Microlink (на Netlify нет роута /preview)
 async function fetchMicrolinkImageOnce(url) {
   if (!url) return null;
   try {
-    const res = await fetch(linkPreviewProxyUrl(url));
+    const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=true`);
     if (!res.ok) return null;
     const json = await res.json();
-    const images = json.images;
-    if (!Array.isArray(images) || images.length === 0) return null;
-    const first = images[0];
-    if (typeof first === 'string') return first;
-    return (first && first.url) || null;
+    if (!json || json.status !== 'success' || !json.data) return null;
+    const d = json.data;
+    return (d.image && d.image.url) ? d.image.url : null;
   } catch (e) {
     return null;
   }
@@ -3581,27 +3569,18 @@ function rerenderAfterLinkPreview() {
   if (ro && ro.classList.contains('open')) updateResultIgPreview();
 }
 
-// «Живое» превью в карточках — тот же прокси /preview, иначе CORS к jsonlink
 async function fetchLinkPreviewOnce(url) {
   try {
-    const res = await fetch(linkPreviewProxyUrl(url));
-    if (res.status === 429) {
-      const ra = parseInt(res.headers.get('Retry-After') || '30', 10);
-      const pauseMs = Math.min(Math.max(isNaN(ra) ? 30 : ra, 15), 180) * 1000;
-      return { rateLimited: true, pauseMs };
-    }
+    const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=true`);
     if (!res.ok) throw new Error('preview failed');
     const json = await res.json();
+    if (!json || json.status !== 'success' || !json.data) throw new Error('preview failed');
     let domain = '';
     try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch (e) {}
-    const images = json.images;
-    let imageUrl = '';
-    if (Array.isArray(images) && images.length > 0) {
-      const first = images[0];
-      imageUrl = typeof first === 'string' ? first : (first && first.url) || '';
-    }
+    const d = json.data;
+    const imageUrl = (d.image && d.image.url) ? d.image.url : '';
     linkPreviewCache[url] = {
-      title: json.title || domain || url,
+      title: d.title || d.publisher || domain || url,
       image: imageUrl,
       domain: domain
     };
