@@ -1101,7 +1101,7 @@
 <!-- Calendar Modal -->
 <div class="overlay" id="calendar-overlay">
   <div class="modal-header">
-    <button class="modal-back" id="calendar-back-btn" onclick="closeCalendarModal()">
+    <button class="modal-back" onclick="closeCalendarModal()">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
     </button>
     <div class="modal-header-title">Календарный план</div>
@@ -1325,8 +1325,6 @@ let syncingOfflineQueue = false;
 let calendarCurrentMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
 let calendarSelectedDate = '';
 let calendarPickDate = ''; // дата, для которой сейчас выбираем сценарий через "+"
-const CALENDAR_PROJECT_ID = 1; // Календарь всегда работает только с проектом 1
-let calendarScenarios = []; // сценарии ТОЛЬКО проекта 1 (для календаря)
 let mediaLibrary = []; // список медиа из Supabase таблицы (общий для всех устройств)
 let mediaFilter = 'all'; // all | pending | approved
 let calendarResults = {}; // scenarioId -> { id, ig_url, images[], note }
@@ -1441,15 +1439,6 @@ async function api(path, method = 'GET', body = null) {
   return text ? JSON.parse(text) : null;
 }
 
-async function loadCalendarScenarios() {
-  // Календарь работает только с проектом 1, независимо от выбранного проекта на главной
-  try {
-    calendarScenarios = await api(`/rest/v1/scenarios?select=*&project_id=eq.${CALENDAR_PROJECT_ID}&order=position.asc,created_at.asc`);
-  } catch (e) {
-    calendarScenarios = [];
-  }
-}
-
 // Загрузка файла с прогрессом (для фото/видео).
 // Важно: на Free плане Supabase максимум 50MB на файл.
 function uploadFileToBucketWithProgress(file, bucketName, onProgress) {
@@ -1499,13 +1488,6 @@ async function init() {
     } else showNoProject();
     renderNav();
     syncOfflineQueue();
-
-    // Роль "calendar": сразу открываем календарь и прячем кнопку "назад"
-    if (isCalendarOnly && isCalendarOnly()) {
-      openCalendarModal();
-      const backBtn = document.getElementById('calendar-back-btn');
-      if (backBtn) backBtn.style.display = 'none';
-    }
   } catch(e) {
     if (projects.length > 0) {
       if (currentRole === 'viewer' && viewerProjectId) {
@@ -1518,13 +1500,6 @@ async function init() {
       } else showNoProject();
       renderNav();
       showToast('Оффлайн режим');
-
-      // В оффлайне тоже сразу открываем календарь для роли "calendar"
-      if (isCalendarOnly && isCalendarOnly()) {
-        openCalendarModal();
-        const backBtn = document.getElementById('calendar-back-btn');
-        if (backBtn) backBtn.style.display = 'none';
-      }
     } else {
       document.getElementById('main-content').innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>Ошибка загрузки.</p></div>`;
     }
@@ -2289,7 +2264,7 @@ function formatDateLabelRu(dateStr) {
 
 function getCalendarItemsForDate(dateStr) {
   if (!dateStr) return [];
-  return calendarScenarios.filter(s => String(s.release_date || '') === dateStr);
+  return scenarios.filter(s => getScenarioReleaseDate(s.id) === dateStr);
 }
 
 function isPastDate(dateStr) {
@@ -2303,10 +2278,10 @@ function isPastDate(dateStr) {
 
 async function loadCalendarResultsForDate(dateStr) {
   calendarResults = {};
-  if (!dateStr) return;
+  if (!dateStr || !currentProjectId) return;
   if (!isPastDate(dateStr)) return;
   try {
-    const rows = await api(`/rest/v1/scenario_results?select=*&project_id=eq.${CALENDAR_PROJECT_ID}&date=eq.${dateStr}`);
+    const rows = await api(`/rest/v1/scenario_results?select=*&project_id=eq.${currentProjectId}&date=eq.${dateStr}`);
     (rows || []).forEach(r => {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       calendarResults[r.scenario_id] = {
@@ -2324,10 +2299,10 @@ async function loadCalendarResultsForDate(dateStr) {
 async function loadDayResultForDate(dateStr) {
   dayResult = null;
   editingDayResultId = null;
-  if (!dateStr) return;
+  if (!dateStr || !currentProjectId) return;
   if (!isPastDate(dateStr)) return;
   try {
-    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${CALENDAR_PROJECT_ID}&date=eq.${dateStr}`);
+    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=eq.${dateStr}`);
     if (rows && rows[0]) {
       const r = rows[0];
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
@@ -2345,13 +2320,13 @@ async function loadDayResultForDate(dateStr) {
 
 async function loadDayResultsForMonth(monthDate) {
   dayResultsByDate = {};
-  if (!monthDate) return;
+  if (!currentProjectId || !monthDate) return;
   try {
     const start = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
     const end = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
     const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
     const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
-    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${CALENDAR_PROJECT_ID}&date=gte.${startStr}&date=lte.${endStr}&order=date.asc`);
+    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=gte.${startStr}&date=lte.${endStr}&order=date.asc`);
     (rows || []).forEach(r => {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       const d = String(r.date);
@@ -2372,18 +2347,17 @@ function renderCalendarPlanList() {
     const hasLink = dayResult && dayResult.ig_url;
     const imgCount = dayResult && dayResult.images ? dayResult.images.length : 0;
     const note = dayResult && dayResult.note ? dayResult.note : '';
-    const canEdit = canEditDayReport();
     return `
       <div class="calendar-plan-item" style="border-style:dashed">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
           <div style="font-weight:800;">Отчет дня</div>
           <!-- Карандашик: быстро открыть редактирование "Отчета дня" -->
-          ${canEdit ? `<button class="media-action-btn" style="padding:6px 10px" onclick="openDayResultModal(event)" title="Редактировать">✎</button>` : ``}
+          <button class="media-action-btn" style="padding:6px 10px" onclick="openDayResultModal(event)" title="Редактировать">✎</button>
         </div>
         <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           ${hasLink ? `<a href="${escapeAttr(dayResult.ig_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:11px;font-weight:800;text-decoration:underline">Ролик</a>` : `<span style="font-size:11px;color:var(--muted);font-weight:800">Без ссылки</span>`}
           <span style="font-size:11px;color:var(--muted);font-weight:800">Скрины: ${imgCount}</span>
-          ${canEdit ? `<button class="media-action-btn" style="padding:6px 10px" onclick="openDayResultModal(event)">Отчет</button>` : ``}
+          <button class="media-action-btn" style="padding:6px 10px" onclick="openDayResultModal(event)">Отчет</button>
         </div>
         ${hasLink ? `<div style="margin-top:8px">${renderLinkPreviewOrLink(dayResult.ig_url)}</div>` : ``}
         ${imgCount > 0 ? `
@@ -2413,7 +2387,7 @@ function renderCalendarPlanList() {
     const reportLine = past
       ? `<div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
            ${hasLink ? `<a href="${escapeAttr(res.ig_url)}" target="_blank" rel="noopener" style="color:var(--accent);font-size:11px;font-weight:800;text-decoration:underline">Ролик</a>` : `<span style="font-size:11px;color:var(--muted);font-weight:800">Без ссылки</span>`}
-           ${canEditDayReport() ? `<button class="media-action-btn" style="padding:6px 10px" onclick="openResultModal(event,${s.id})">Отчет</button>` : ``}
+           <button class="media-action-btn" style="padding:6px 10px" onclick="openResultModal(event,${s.id})">Отчет</button>
          </div>
          ${hasLink ? `<div style="margin-top:8px">${renderLinkPreviewOrLink(res.ig_url)}</div>` : ``}
          ${imgCount > 0 ? `
@@ -2483,7 +2457,7 @@ function renderCalendar() {
 
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const count = calendarScenarios.filter(s => String(s.release_date || '') === dateStr).length;
+    const count = scenarios.filter(s => String(s.release_date || '') === dateStr).length;
     const selected = calendarSelectedDate === dateStr ? 'selected' : '';
 
     // Плюсик показываем только на выбранной дате, чтобы не нажимался случайно пальцем.
@@ -2500,7 +2474,7 @@ function renderCalendar() {
        - Не админ: НЕ может планировать/редактировать сценарии, но МОЖЕТ добавлять "Отчет дня" задним числом
        Плюсик показываем только на выбранной дате (isSelectedDay), чтобы не нажимался случайно. */
     const showPlus = isSelectedDay && (isPast
-      ? (canEditDayReport() && !(hasSelectedDayReport || hasAnyDayReport)) // отчет дня: только если есть право и его еще нет
+      ? !(hasSelectedDayReport || hasAnyDayReport)                 // отчет дня можно добавлять всем, если его еще нет
       : (isAdmin() && count === 0)                                 // сценарии на будущие даты — только админ и только если пусто
     );
 
@@ -2550,10 +2524,7 @@ function selectCalendarDate(dateStr) {
 
 function changeCalendarMonth(delta) {
   calendarCurrentMonth = new Date(calendarCurrentMonth.getFullYear(), calendarCurrentMonth.getMonth() + delta, 1);
-  Promise.all([
-    loadCalendarScenarios(),
-    loadDayResultsForMonth(calendarCurrentMonth)
-  ]).finally(() => renderCalendar());
+  loadDayResultsForMonth(calendarCurrentMonth).finally(() => renderCalendar());
 }
 
 function openCalendarModal() {
@@ -2564,17 +2535,10 @@ function openCalendarModal() {
   calendarCurrentMonth = new Date(new Date(calendarSelectedDate).getFullYear(), new Date(calendarSelectedDate).getMonth(), 1);
   history.pushState({ modal: 'calendar' }, '');
   document.getElementById('calendar-overlay').classList.add('open');
-  Promise.all([
-    loadCalendarScenarios(),
-    loadDayResultsForMonth(calendarCurrentMonth),
-    loadDayResultForDate(calendarSelectedDate),
-    loadCalendarResultsForDate(calendarSelectedDate)
-  ]).finally(() => renderCalendar());
+  loadDayResultsForMonth(calendarCurrentMonth).finally(() => renderCalendar());
 }
 
 function closeCalendarModal(fromPopState = false) {
-  // Роль "calendar": календарь всегда на экране, закрывать его не надо
-  if (isCalendarOnly && isCalendarOnly()) return;
   const overlay = document.getElementById('calendar-overlay');
   if (!fromPopState && overlay && overlay.classList.contains('open')) {
     history.back();
@@ -2602,7 +2566,7 @@ function openCalendarScenarioPicker(ev, dateStr) {
   title.textContent = `Поставить на ${formatDateLabelRu(dateStr)}`;
 
   // Показываем только сценарии БЕЗ даты (чтобы планировать было быстро и без путаницы)
-  const withoutDate = calendarScenarios.filter(s => !s.release_date);
+  const withoutDate = scenarios.filter(s => !s.release_date);
   const sorted = [...withoutDate].sort((a, b) => {
     const pa = (a.position ?? 0), pb = (b.position ?? 0);
     if (pa !== pb) return pa - pb;
@@ -3556,7 +3520,7 @@ function initFastScroll() {
 }
 
 // ── AUTH ──
-let currentRole = null; // 'admin' | 'viewer' | 'calendar'
+let currentRole = null; // 'admin' or 'viewer'
 let viewerProjectId = null;
 
 async function doLogin() {
@@ -3584,30 +3548,13 @@ async function doLogin() {
 
 function applyRole() {
   if (currentRole === 'viewer') {
-    // Viewer: прячем любые кнопки редактирования сценариев
+    // Hide all edit controls
     document.getElementById('fab').style.display = 'none';
     document.querySelectorAll('.nav-add-project').forEach(el => el.style.display = 'none');
-    return;
-  }
-
-  if (currentRole === 'calendar') {
-    // Calendar-only: человек видит только календарный план (без вкладок и редактирования)
-    document.body.classList.add('calendar-only');
-    document.getElementById('fab').style.display = 'none';
-    document.querySelectorAll('.nav-add-project').forEach(el => el.style.display = 'none');
-    return;
   }
 }
 
 function isAdmin() { return currentRole === 'admin'; }
-
-function isCalendarOnly() { return currentRole === 'calendar'; }
-
-function canEditDayReport() {
-  // Админ и viewer могут добавлять/редактировать "Отчет дня" задним числом.
-  // В режиме calendar-only это запрещено (только просмотр).
-  return !isCalendarOnly() && (isAdmin() || currentRole === 'viewer');
-}
 
 // Check session on load
 (function checkSession() {
