@@ -1,14 +1,12 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "smmscenarios",
-  "main": "src/worker.js",
   "compatibility_date": "2026-05-09",
   "observability": {
     "enabled": true
   },
   "assets": {
-    "directory": ".",
-    "binding": "ASSETS"
+    "directory": "."
   },
   "compatibility_flags": [
     "nodejs_compat"
