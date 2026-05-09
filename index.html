@@ -1343,8 +1343,11 @@ const linkPreviewLoading = new Set();
 const linkPreviewQueue = [];
 const linkPreviewQueued = new Set();
 let linkPreviewDrainRunning = false;
-const LINK_PREVIEW_GAP_MS = 1200; // пауза между запросами (бесплатный Microlink режет частые вызовы)
+// Бесплатный Microlink без API-ключа: мало запросов в минуту — делаем длинные паузы
+const LINK_PREVIEW_GAP_MS = 3000; // пауза между реальными HTTP-запросами в очереди
 let linkPreviewPersistTimer = null;
+// «Капельница» превью по календарю: не ставим 20 ссылок в очередь сразу
+let calendarPreviewDripTimer = null;
 // Подтянуть сохранённые превью — меньше запросов к Microlink (как после «старого» захода на Netlify)
 function loadLinkPreviewCacheFromStorage() {
   try {
@@ -1369,6 +1372,44 @@ function persistLinkPreviewCacheSoon() {
       localStorage.setItem(LS_LINK_PREVIEW_KEY, JSON.stringify(slim));
     } catch (e) { /* квота localStorage */ }
   }, 500);
+}
+function clearCalendarPreviewDrip() {
+  if (calendarPreviewDripTimer) {
+    clearTimeout(calendarPreviewDripTimer);
+    calendarPreviewDripTimer = null;
+  }
+}
+// Бесплатно: превью для клеток месяца — по одному раз в несколько секунд (не как раньше «весь месяц сразу»)
+function scheduleCalendarPreviewDrip() {
+  clearCalendarPreviewDrip();
+  const co = document.getElementById('calendar-overlay');
+  if (!co || !co.classList.contains('open')) return;
+  const monthDate = new Date(calendarCurrentMonth.getFullYear(), calendarCurrentMonth.getMonth(), 1);
+  const daysInMonth = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0).getDate();
+  const urls = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const dr = dayResultsByDate[dateStr];
+    if (dr && dr.ig_url && !linkPreviewCache[dr.ig_url]) urls.push(dr.ig_url);
+  }
+  const uniq = [...new Set(urls)];
+  if (uniq.length === 0) return;
+  let idx = 0;
+  function tick() {
+    const ov = document.getElementById('calendar-overlay');
+    if (!ov || !ov.classList.contains('open')) {
+      clearCalendarPreviewDrip();
+      return;
+    }
+    if (idx >= uniq.length) {
+      calendarPreviewDripTimer = null;
+      return;
+    }
+    const u = uniq[idx++];
+    if (u && !linkPreviewCache[u]) fetchLinkPreview(u);
+    calendarPreviewDripTimer = setTimeout(tick, 6500);
+  }
+  calendarPreviewDripTimer = setTimeout(tick, 1200);
 }
 let lightboxScrollY = 0;
 let fastScrollDragging = false;
@@ -2433,7 +2474,7 @@ async function loadDayResultsForMonth(monthDate) {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       const d = String(r.date);
       dayResultsByDate[d] = { id: r.id, ig_url: r.ig_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
-      if (dayResultsByDate[d].ig_url) fetchLinkPreview(dayResultsByDate[d].ig_url);
+      // Не зовём Microlink тут: на месяц 10+ ссылок = 429 на бесплатном лимите. Превью — каплями в renderCalendar.
     });
   } catch (e) {
     // тихо
@@ -2630,7 +2671,10 @@ function changeCalendarMonth(delta) {
   Promise.all([
     loadCalendarScenarios(),
     loadDayResultsForMonth(calendarCurrentMonth)
-  ]).finally(() => renderCalendar());
+  ]).finally(() => {
+    renderCalendar();
+    scheduleCalendarPreviewDrip(); // бесплатно: капля превью по месяцу (не на каждый render)
+  });
 }
 
 function openCalendarModal() {
@@ -2646,7 +2690,10 @@ function openCalendarModal() {
     loadDayResultsForMonth(calendarCurrentMonth),
     loadDayResultForDate(calendarSelectedDate),
     loadCalendarResultsForDate(calendarSelectedDate)
-  ]).finally(() => renderCalendar());
+  ]).finally(() => {
+    renderCalendar();
+    scheduleCalendarPreviewDrip();
+  });
 }
 
 function closeCalendarModal(fromPopState = false) {
@@ -2658,6 +2705,7 @@ function closeCalendarModal(fromPopState = false) {
     return;
   }
   document.getElementById('calendar-overlay').classList.remove('open');
+  clearCalendarPreviewDrip();
 }
 
 // ── КАЛЕНДАРЬ: быстрый выбор сценария через "+" ──
@@ -3412,8 +3460,9 @@ function rerenderAfterLinkPreview() {
 async function fetchLinkPreviewOnce(url) {
   const res = await fetch(`https://api.microlink.io/?url=${encodeURIComponent(url)}&meta=true`);
   if (res.status === 429) {
-    const ra = parseInt(res.headers.get('Retry-After') || '20', 10);
-    const pauseMs = Math.min(Math.max(isNaN(ra) ? 20 : ra, 10), 180) * 1000;
+    const ra = parseInt(res.headers.get('Retry-After') || '45', 10);
+    // Без платного ключа Microlink часто просит подождать дольше
+    const pauseMs = Math.min(Math.max(isNaN(ra) ? 45 : ra, 30), 180) * 1000;
     return { rateLimited: true, pauseMs };
   }
   const json = await res.json();
@@ -3446,7 +3495,7 @@ async function drainLinkPreviewQueue() {
         // Вернём URL в начало очереди и подождём — иначе десятки следующих запросов тоже получат 429
         linkPreviewQueue.unshift(url);
         linkPreviewQueued.add(url);
-        await new Promise(r => setTimeout(r, out.pauseMs || 20000));
+        await new Promise(r => setTimeout(r, out.pauseMs || 45000));
         continue;
       }
     } catch (e) {
