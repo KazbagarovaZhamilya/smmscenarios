@@ -1221,8 +1221,8 @@
     </div>
 
     <div class="proj-field">
-      <label>Подписчики (на конец дня)</label>
-      <input type="number" id="day-result-followers" placeholder="Например: 10240" inputmode="numeric" style="
+      <label>Подписчики</label>
+      <input type="number" id="day-result-followers" placeholder="" inputmode="numeric" style="
         width:100%;
         padding:12px 14px;border-radius:12px;
         border:1.5px solid var(--border);background:var(--surface);
@@ -1232,8 +1232,8 @@
     </div>
 
     <div class="proj-field">
-      <label>Просмотры (на конец дня)</label>
-      <input type="number" id="day-result-views" placeholder="Например: 12345" inputmode="numeric" style="
+      <label>Просмотры</label>
+      <input type="number" id="day-result-views" placeholder="" inputmode="numeric" style="
         width:100%;
         padding:12px 14px;border-radius:12px;
         border:1.5px solid var(--border);background:var(--surface);
@@ -2829,9 +2829,32 @@ function openDayResultModal(ev) {
   pendingDayResultImages = r.images ? [...r.images] : [];
   document.getElementById('day-result-title').textContent = `Отчет дня · ${formatDateLabelRu(calendarSelectedDate)}`;
   document.getElementById('day-result-ig-url').value = r.ig_url || '';
-  // Подписчики / просмотры — числа на конец дня
-  document.getElementById('day-result-followers').value = (r.followers === null || r.followers === undefined || Number.isNaN(Number(r.followers))) ? '' : String(Math.trunc(Number(r.followers)));
-  document.getElementById('day-result-views').value = (r.views === null || r.views === undefined || Number.isNaN(Number(r.views))) ? '' : String(Math.trunc(Number(r.views)));
+  // Подписчики / просмотры — числа.
+  // Подписчики: если на выбранной дате пусто — автоподставляем последнюю известную цифру (по предыдущим датам).
+  const followersInput = document.getElementById('day-result-followers');
+  const viewsInput = document.getElementById('day-result-views');
+  const followersVal = (r.followers === null || r.followers === undefined || Number.isNaN(Number(r.followers))) ? '' : String(Math.trunc(Number(r.followers)));
+  const viewsVal = (r.views === null || r.views === undefined || Number.isNaN(Number(r.views))) ? '' : String(Math.trunc(Number(r.views)));
+  if (followersInput) {
+    if (followersVal) {
+      followersInput.value = followersVal;
+    } else {
+      // Ищем последнюю дату < выбранной с заполненными подписчиками
+      let lastDate = '';
+      let lastFollowers = null;
+      try {
+        Object.keys(dayResultsByDate || {}).forEach(ds => {
+          if (!ds || String(ds) >= String(calendarSelectedDate)) return;
+          const rec = dayResultsByDate[ds];
+          const f = rec && rec.followers !== null && rec.followers !== undefined && !Number.isNaN(Number(rec.followers)) ? Number(rec.followers) : null;
+          if (f === null) return;
+          if (!lastDate || String(ds) > String(lastDate)) { lastDate = String(ds); lastFollowers = f; }
+        });
+      } catch (e) {}
+      followersInput.value = (lastFollowers === null) ? '' : String(Math.trunc(Number(lastFollowers)));
+    }
+  }
+  if (viewsInput) viewsInput.value = viewsVal;
   document.getElementById('day-result-note').value = r.note || '';
   updateDayResultIgPreview();
   renderDayResultThumbs();
