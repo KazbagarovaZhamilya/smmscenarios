@@ -444,6 +444,25 @@
     background: #fdf3ec;
   }
 
+  /* Метрики в клетке календаря:
+     сверху показываем подписчиков, снизу — просмотры */
+  .calendar-metric {
+    position: absolute;
+    left: 5px;
+    padding: 2px 6px;
+    border-radius: 9px;
+    background: rgba(255,255,255,0.82);
+    border: 1px solid rgba(0,0,0,0.06);
+    color: var(--text2);
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1.05;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .calendar-metric.top { top: 4px; }
+  .calendar-metric.bottom { bottom: 4px; }
+
   /* Мини-превью опубликованного ролика в клетке календаря */
   .calendar-pub-bg {
     position: absolute;
@@ -1202,6 +1221,28 @@
     </div>
 
     <div class="proj-field">
+      <label>Подписчики (на конец дня)</label>
+      <input type="number" id="day-result-followers" placeholder="Например: 10240" inputmode="numeric" style="
+        width:100%;
+        padding:12px 14px;border-radius:12px;
+        border:1.5px solid var(--border);background:var(--surface);
+        font-family:'Inter',sans-serif;font-size:14px;color:var(--text);
+        outline:none;
+      ">
+    </div>
+
+    <div class="proj-field">
+      <label>Просмотры (на конец дня)</label>
+      <input type="number" id="day-result-views" placeholder="Например: 12345" inputmode="numeric" style="
+        width:100%;
+        padding:12px 14px;border-radius:12px;
+        border:1.5px solid var(--border);background:var(--surface);
+        font-family:'Inter',sans-serif;font-size:14px;color:var(--text);
+        outline:none;
+      ">
+    </div>
+
+    <div class="proj-field">
       <label>Скрины эффективности (до 50MB файл)</label>
       <div id="day-result-upload-queue" style="display:none;flex-direction:column;gap:8px"></div>
       <button class="media-upload-btn" style="width:100%;margin-top:8px" onclick="document.getElementById('day-result-file-input').click()">+ Добавить скрины</button>
@@ -1383,10 +1424,10 @@ let calendarResults = {}; // scenarioId -> { id, ig_url, images[], note }
 let editingResultScenarioId = null;
 let editingResultId = null;
 let pendingResultImages = []; // urls
-let dayResult = null; // { id, ig_url, images[], note }
+let dayResult = null; // { id, ig_url, images[], note, followers, views }
 let editingDayResultId = null;
 let pendingDayResultImages = [];
-let dayResultsByDate = {}; // dateStr -> { id, ig_url, images[], note }
+let dayResultsByDate = {}; // dateStr -> { id, ig_url, images[], note, followers, views }
 
 async function getPreviewImageUrl(url) {
   // Получаем картинку превью через Supabase Edge Function (серверный запрос)
@@ -2403,7 +2444,16 @@ async function loadDayResultForDate(dateStr) {
     if (rows && rows[0]) {
       const r = rows[0];
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
-      dayResult = { id: r.id, ig_url: r.ig_url || '', link_preview_url: r.link_preview_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
+      dayResult = {
+        id: r.id,
+        ig_url: r.ig_url || '',
+        link_preview_url: r.link_preview_url || '',
+        images: Array.isArray(imgs) ? imgs : [],
+        note: r.note || '',
+        // Метрики: подписчики/просмотры на конец дня
+        followers: (r.followers === null || r.followers === undefined || r.followers === '') ? null : Number(r.followers),
+        views: (r.views === null || r.views === undefined || r.views === '') ? null : Number(r.views)
+      };
       editingDayResultId = r.id;
       // Обновляем кэш по месяцу, чтобы превью появлялось в самой клетке даты
       dayResultsByDate[dateStr] = { ...dayResult };
@@ -2427,7 +2477,16 @@ async function loadDayResultsForMonth(monthDate) {
     (rows || []).forEach(r => {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       const d = String(r.date);
-      dayResultsByDate[d] = { id: r.id, ig_url: r.ig_url || '', link_preview_url: r.link_preview_url || '', images: Array.isArray(imgs) ? imgs : [], note: r.note || '' };
+      dayResultsByDate[d] = {
+        id: r.id,
+        ig_url: r.ig_url || '',
+        link_preview_url: r.link_preview_url || '',
+        images: Array.isArray(imgs) ? imgs : [],
+        note: r.note || '',
+        // Метрики: подписчики/просмотры на конец дня
+        followers: (r.followers === null || r.followers === undefined || r.followers === '') ? null : Number(r.followers),
+        views: (r.views === null || r.views === undefined || r.views === '') ? null : Number(r.views)
+      };
       if (dayResultsByDate[d].ig_url) fetchLinkPreview(dayResultsByDate[d].ig_url);
     });
   } catch (e) {
@@ -2567,8 +2626,8 @@ function renderCalendar() {
     const isSelectedDay = calendarSelectedDate === dateStr;
     const isPast = isPastDate(dateStr);
     const drAny = dayResultsByDate && dayResultsByDate[dateStr] ? dayResultsByDate[dateStr] : null;
-    const hasAnyDayReport = !!(drAny && (drAny.id || drAny.ig_url || (drAny.images && drAny.images.length > 0) || drAny.note));
-    const hasSelectedDayReport = isSelectedDay && !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note));
+    const hasAnyDayReport = !!(drAny && (drAny.id || drAny.ig_url || (drAny.images && drAny.images.length > 0) || drAny.note || drAny.followers !== null || drAny.views !== null));
+    const hasSelectedDayReport = isSelectedDay && !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note || dayResult.followers !== null || dayResult.views !== null));
     // Права:
     // - Прошедшие даты (Отчет дня): админ и viewer, если отчета еще нет
     // - Будущие даты (планирование сценариев): только админ и только если на дне 0 сценариев
@@ -2584,12 +2643,20 @@ function renderCalendar() {
     const cached = pubUrl ? linkPreviewCache[pubUrl] : null;
     const pubImg = storedPreview || (cached && !cached.failed && cached.image ? cached.image : '');
 
+    // Форматируем числа красиво (10 240 вместо 10240)
+    const fol = (dr && dr.followers !== null && dr.followers !== undefined && !Number.isNaN(Number(dr.followers))) ? Number(dr.followers) : null;
+    const vw = (dr && dr.views !== null && dr.views !== undefined && !Number.isNaN(Number(dr.views))) ? Number(dr.views) : null;
+    const folText = (fol !== null) ? fol.toLocaleString('ru-RU') : '';
+    const viewText = (vw !== null) ? vw.toLocaleString('ru-RU') : '';
+
     cells.push(`
       <!-- Важно: не делаем "кнопку в кнопке". Иначе маленький "+" может не показываться/не нажиматься -->
       <div class="calendar-day ${selected} ${weekend}" role="button" tabindex="0"
            onclick="selectCalendarDate('${dateStr}')"
            onkeydown="if(event.key==='Enter'||event.key===' '){selectCalendarDate('${dateStr}')}">
         <span class="calendar-day-num">${d}</span>
+        ${folText ? `<span class="calendar-metric top">${folText}</span>` : ''}
+        ${viewText ? `<span class="calendar-metric bottom">${viewText}</span>` : ''}
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
         ${pubImg ? `<div class="calendar-pub-bg" style="background-image:url('${escapeAttr(pubImg)}')"></div><div class="calendar-pub-overlay"></div>` : ''}
         ${(!pubImg && hasAnyDayReport) ? `<span class="calendar-dot" style="position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : ''}
@@ -2758,10 +2825,13 @@ function openDayResultModal(ev) {
 
   history.pushState({ modal: 'day_result' }, '');
 
-  const r = dayResult || { ig_url: '', images: [], note: '' };
+  const r = dayResult || { ig_url: '', images: [], note: '', followers: null, views: null };
   pendingDayResultImages = r.images ? [...r.images] : [];
   document.getElementById('day-result-title').textContent = `Отчет дня · ${formatDateLabelRu(calendarSelectedDate)}`;
   document.getElementById('day-result-ig-url').value = r.ig_url || '';
+  // Подписчики / просмотры — числа на конец дня
+  document.getElementById('day-result-followers').value = (r.followers === null || r.followers === undefined || Number.isNaN(Number(r.followers))) ? '' : String(Math.trunc(Number(r.followers)));
+  document.getElementById('day-result-views').value = (r.views === null || r.views === undefined || Number.isNaN(Number(r.views))) ? '' : String(Math.trunc(Number(r.views)));
   document.getElementById('day-result-note').value = r.note || '';
   updateDayResultIgPreview();
   renderDayResultThumbs();
@@ -2855,6 +2925,11 @@ async function saveDayResult() {
   if (!currentProjectId || !calendarSelectedDate) return;
   if (!isPastDate(calendarSelectedDate)) { showToast('Только для прошедших дат'); return; }
   const igUrl = (document.getElementById('day-result-ig-url').value || '').trim();
+  // Метрики: читаем как числа. Пустое = null
+  const followersRaw = (document.getElementById('day-result-followers').value || '').trim();
+  const viewsRaw = (document.getElementById('day-result-views').value || '').trim();
+  const followers = followersRaw ? Number.parseInt(followersRaw, 10) : null;
+  const views = viewsRaw ? Number.parseInt(viewsRaw, 10) : null;
   const note = (document.getElementById('day-result-note').value || '').trim();
   // Картинка превью — сохраним сразу в базу, чтобы календарь грузился быстро
   const previewUrl = igUrl ? await getPreviewImageUrl(igUrl) : '';
@@ -2863,6 +2938,9 @@ async function saveDayResult() {
     date: calendarSelectedDate,
     ig_url: igUrl || null,
     link_preview_url: previewUrl || null,
+    // Метрики на конец дня
+    followers: (followers === null || Number.isNaN(followers)) ? null : followers,
+    views: (views === null || Number.isNaN(views)) ? null : views,
     note: note || null,
     images: JSON.stringify(pendingDayResultImages || [])
   };
@@ -2873,7 +2951,15 @@ async function saveDayResult() {
       const created = await api('/rest/v1/day_results', 'POST', payload);
       if (created && created[0]) editingDayResultId = created[0].id;
     }
-    dayResult = { id: editingDayResultId, ig_url: igUrl, link_preview_url: previewUrl || '', images: [...(pendingDayResultImages || [])], note };
+    dayResult = {
+      id: editingDayResultId,
+      ig_url: igUrl,
+      link_preview_url: previewUrl || '',
+      images: [...(pendingDayResultImages || [])],
+      note,
+      followers: (followers === null || Number.isNaN(followers)) ? null : followers,
+      views: (views === null || Number.isNaN(views)) ? null : views
+    };
     // Обновляем кэш по месяцу, чтобы превью появлялось в календаре сразу
     dayResultsByDate[calendarSelectedDate] = { ...dayResult };
     if (igUrl) fetchLinkPreview(igUrl);
