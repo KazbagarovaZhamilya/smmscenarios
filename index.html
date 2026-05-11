@@ -2830,12 +2830,14 @@ function createScenarioForCalendarDate() {
   queueScenarioDraftAutosave();
 }
 
-function pickScenarioForCalendarDate(scenarioId) {
+async function pickScenarioForCalendarDate(scenarioId) {
   if (!calendarPickDate) return;
-  setScenarioReleaseDate(scenarioId, calendarPickDate);
+  // Важно: ждём сохранения даты в Supabase и обновления scenarios[].
+  // Раньше renderCalendar() вызывался сразу, без await — клетка не обновлялась, пока не обновишь страницу.
+  await setScenarioReleaseDate(scenarioId, calendarPickDate);
   calendarSelectedDate = calendarPickDate;
   closeCalendarPick();
-  renderCalendar();
+  render();
   showToast('Запланировано');
 }
 
@@ -3039,6 +3041,7 @@ async function saveDayResult() {
     dayResultsByDate[calendarSelectedDate] = { ...dayResult };
     if (igUrl) fetchLinkPreview(igUrl);
     renderCalendarPlanList();
+    renderCalendar();
     closeDayResultModal(true);
     document.getElementById('day-result-overlay').classList.remove('open');
     showToast('Отчет сохранен');
@@ -3186,6 +3189,7 @@ async function saveResult() {
       note
     };
     renderCalendarPlanList();
+    renderCalendar();
     closeResultModal();
     showToast('Отчет сохранен');
   } catch (e) {
