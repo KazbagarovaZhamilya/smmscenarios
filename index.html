@@ -444,6 +444,16 @@
     background: #fdf3ec;
   }
 
+  /* Сегодняшний день: показываем рамку всегда, даже если выбрана другая дата */
+  .calendar-day.today {
+    border-color: rgba(181,98,42,0.55);
+    box-shadow: 0 0 0 2px rgba(181,98,42,0.12);
+  }
+  .calendar-day.today.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(181,98,42,0.18);
+  }
+
   /* Метрики в клетке календаря:
      сверху показываем подписчиков, снизу — просмотры */
   .calendar-metric {
@@ -2424,6 +2434,14 @@ function isPastDate(dateStr) {
   return String(dateStr) < todayStr;
 }
 
+function isPastOrTodayDate(dateStr) {
+  // Прошедшая ИЛИ сегодняшняя дата (нужно для "Отчета дня" за сегодня)
+  if (!dateStr) return false;
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return String(dateStr) <= todayStr;
+}
+
 async function loadCalendarResultsForDate(dateStr) {
   calendarResults = {};
   if (!dateStr || !currentProjectId) return;
@@ -2448,7 +2466,8 @@ async function loadDayResultForDate(dateStr) {
   dayResult = null;
   editingDayResultId = null;
   if (!dateStr || !currentProjectId) return;
-  if (!isPastDate(dateStr)) return;
+  // Отчет дня доступен для прошедших дат и для сегодня
+  if (!isPastOrTodayDate(dateStr)) return;
   try {
     const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=eq.${dateStr}`);
     if (rows && rows[0]) {
@@ -2621,6 +2640,10 @@ function renderCalendar() {
   const cells = [];
   for (let i = 0; i < firstDay; i++) cells.push('<div class="calendar-day empty"></div>');
 
+  // Сегодняшняя дата (строкой YYYY-MM-DD) — для постоянной рамки "сегодня"
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const count = scenarios.filter(s => String(s.release_date || '') === dateStr).length;
@@ -2628,6 +2651,7 @@ function renderCalendar() {
     // Выходные: считаем день недели в сетке (0=пн ... 6=вс)
     const dayOfWeekIdx = (firstDay + (d - 1)) % 7;
     const weekend = (dayOfWeekIdx === 5 || dayOfWeekIdx === 6) ? 'weekend' : '';
+    const isToday = (dateStr === todayStr) ? 'today' : '';
 
     // Плюсик показываем только на выбранной дате, чтобы не нажимался случайно пальцем.
     // Логика:
@@ -2635,13 +2659,14 @@ function renderCalendar() {
     // - Прошедшая дата: плюс только если отчета дня еще нет
     const isSelectedDay = calendarSelectedDate === dateStr;
     const isPast = isPastDate(dateStr);
+    const isPastOrToday = isPastOrTodayDate(dateStr);
     const drAny = dayResultsByDate && dayResultsByDate[dateStr] ? dayResultsByDate[dateStr] : null;
     const hasAnyDayReport = !!(drAny && (drAny.id || drAny.ig_url || (drAny.images && drAny.images.length > 0) || drAny.note || drAny.followers !== null || drAny.views !== null));
     const hasSelectedDayReport = isSelectedDay && !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note || dayResult.followers !== null || dayResult.views !== null));
     // Права:
-    // - Прошедшие даты (Отчет дня): админ и viewer, если отчета еще нет
+    // - Прошедшие даты И сегодня (Отчет дня): админ и viewer, если отчета еще нет
     // - Будущие даты (планирование сценариев): только админ и только если на дне 0 сценариев
-    const showPlus = isSelectedDay && (isPast
+    const showPlus = isSelectedDay && (isPastOrToday
       ? (canEditDayReport() && !(hasSelectedDayReport || hasAnyDayReport))
       : (isAdmin() && count === 0)
     );
@@ -2661,7 +2686,7 @@ function renderCalendar() {
 
     cells.push(`
       <!-- Важно: не делаем "кнопку в кнопке". Иначе маленький "+" может не показываться/не нажиматься -->
-      <div class="calendar-day ${selected} ${weekend}" role="button" tabindex="0"
+      <div class="calendar-day ${selected} ${weekend} ${isToday}" role="button" tabindex="0"
            onclick="selectCalendarDate('${dateStr}')"
            onkeydown="if(event.key==='Enter'||event.key===' '){selectCalendarDate('${dateStr}')}">
         <span class="calendar-day-num">${d}</span>
@@ -2670,7 +2695,7 @@ function renderCalendar() {
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
         ${pubImg ? `<div class="calendar-pub-bg" style="background-image:url('${escapeAttr(pubImg)}')"></div><div class="calendar-pub-overlay"></div>` : ''}
         ${(!pubImg && hasAnyDayReport) ? `<span class="calendar-dot" style="position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : ''}
-        ${showPlus ? (isPast
+        ${showPlus ? (isPastOrToday
           ? `<button type="button" class="calendar-add-btn" onclick="openDayResultModalForDate(event,'${dateStr}')">+</button>`
           : `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>`
         ) : ''}
@@ -2828,8 +2853,8 @@ function openDayResultModalForDate(ev, dateStr) {
 
 function openDayResultModal(ev) {
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
-  if (!calendarSelectedDate || !isPastDate(calendarSelectedDate)) {
-    showToast('Отчет доступен для прошедших дат');
+  if (!calendarSelectedDate || !isPastOrTodayDate(calendarSelectedDate)) {
+    showToast('Отчет доступен для прошедших дат и для сегодня');
     return;
   }
 
@@ -2956,7 +2981,7 @@ async function handleDayResultFiles(e) {
 
 async function saveDayResult() {
   if (!currentProjectId || !calendarSelectedDate) return;
-  if (!isPastDate(calendarSelectedDate)) { showToast('Только для прошедших дат'); return; }
+  if (!isPastOrTodayDate(calendarSelectedDate)) { showToast('Только для прошедших дат и для сегодня'); return; }
   const igUrl = (document.getElementById('day-result-ig-url').value || '').trim();
   // Метрики: читаем как числа. Пустое = null
   const followersRaw = (document.getElementById('day-result-followers').value || '').trim();
