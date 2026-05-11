@@ -435,6 +435,15 @@
     background: #fdf3ec;
   }
 
+  /* Выходные (сб/вс) делаем слегка серыми, чтобы визуально отличались */
+  .calendar-day.weekend {
+    background: #f4f4f4;
+  }
+  /* Если день выбран — подсветка выбора важнее, чем "выходной" фон */
+  .calendar-day.weekend.selected {
+    background: #fdf3ec;
+  }
+
   /* Мини-превью опубликованного ролика в клетке календаря */
   .calendar-pub-bg {
     position: absolute;
@@ -2547,6 +2556,9 @@ function renderCalendar() {
     const dateStr = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const count = scenarios.filter(s => String(s.release_date || '') === dateStr).length;
     const selected = calendarSelectedDate === dateStr ? 'selected' : '';
+    // Выходные: считаем день недели в сетке (0=пн ... 6=вс)
+    const dayOfWeekIdx = (firstDay + (d - 1)) % 7;
+    const weekend = (dayOfWeekIdx === 5 || dayOfWeekIdx === 6) ? 'weekend' : '';
 
     // Плюсик показываем только на выбранной дате, чтобы не нажимался случайно пальцем.
     // Логика:
@@ -2574,7 +2586,7 @@ function renderCalendar() {
 
     cells.push(`
       <!-- Важно: не делаем "кнопку в кнопке". Иначе маленький "+" может не показываться/не нажиматься -->
-      <div class="calendar-day ${selected}" role="button" tabindex="0"
+      <div class="calendar-day ${selected} ${weekend}" role="button" tabindex="0"
            onclick="selectCalendarDate('${dateStr}')"
            onkeydown="if(event.key==='Enter'||event.key===' '){selectCalendarDate('${dateStr}')}">
         <span class="calendar-day-num">${d}</span>
