@@ -467,12 +467,21 @@
     z-index: 4;
     pointer-events: none;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    /* Не обрезаем «…» — на телефоне число должно быть целиком или в коротком виде */
+    overflow: visible;
     text-align: center;
   }
   .calendar-metric.top { top: -10px; }
   .calendar-metric.bottom { bottom: -10px; }
+
+  /* Телефон: короче строка (см. formatCalendarMetricCell) + чуть мельче, без жёсткой ширины */
+  @media (max-width: 539px) {
+    .calendar-metric {
+      max-width: none;
+      font-size: 9px;
+      padding: 1px 4px;
+    }
+  }
 
   /* Мини-превью опубликованного ролика в клетке календаря */
   .calendar-pub-bg {
@@ -2420,6 +2429,25 @@ function formatDateLabelRu(dateStr) {
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
 }
 
+// Числа над клеткой: на телефоне — короткая запись (например 12,5 тыс.), без обрезки «…»
+function formatCalendarMetricCell(n) {
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return '';
+  const x = Math.trunc(Number(n));
+  const narrow = typeof window !== 'undefined' && window.innerWidth < 540;
+  if (narrow && x >= 1000) {
+    try {
+      return new Intl.NumberFormat('ru-RU', {
+        notation: 'compact',
+        compactDisplay: 'short',
+        maximumFractionDigits: 1,
+      }).format(x);
+    } catch (e) {
+      return x.toLocaleString('ru-RU');
+    }
+  }
+  return x.toLocaleString('ru-RU');
+}
+
 function getCalendarItemsForDate(dateStr) {
   if (!dateStr) return [];
   return scenarios.filter(s => getScenarioReleaseDate(s.id) === dateStr);
@@ -2666,8 +2694,8 @@ function renderCalendar() {
     // Форматируем числа красиво (10 240 вместо 10240)
     const fol = (dr && dr.followers !== null && dr.followers !== undefined && !Number.isNaN(Number(dr.followers))) ? Number(dr.followers) : null;
     const vw = (dr && dr.views !== null && dr.views !== undefined && !Number.isNaN(Number(dr.views))) ? Number(dr.views) : null;
-    const folText = (fol !== null) ? fol.toLocaleString('ru-RU') : '';
-    const viewText = (vw !== null) ? vw.toLocaleString('ru-RU') : '';
+    const folText = (fol !== null) ? formatCalendarMetricCell(fol) : '';
+    const viewText = (vw !== null) ? formatCalendarMetricCell(vw) : '';
 
     cells.push(`
       <!-- Важно: не делаем "кнопку в кнопке". Иначе маленький "+" может не показываться/не нажиматься -->
