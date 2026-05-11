@@ -482,6 +482,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    text-align: center;
   }
   .calendar-metric.top { top: -10px; }
   .calendar-metric.bottom { bottom: -10px; }
@@ -2519,30 +2520,41 @@ async function loadDayResultForDate(dateStr) {
 }
 
 async function loadDayResultsForMonth(monthDate) {
-  dayResultsByDate = {};
   if (!currentProjectId || !monthDate) return;
   try {
     const start = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
     const end = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
     const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
     const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
+    const y = monthDate.getFullYear();
+    const mo = monthDate.getMonth();
+    const inMonth = new Set();
+    for (let day = 1; day <= end.getDate(); day++) {
+      inMonth.add(`${y}-${String(mo + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+    }
     const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=gte.${startStr}&date=lte.${endStr}&order=date.asc`);
+    const incoming = {};
     (rows || []).forEach(r => {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       const d = normalizeCalendarDateKey(r.date);
       if (!d) return;
-      dayResultsByDate[d] = {
+      incoming[d] = {
         id: r.id,
         ig_url: r.ig_url || '',
         link_preview_url: r.link_preview_url || '',
         images: Array.isArray(imgs) ? imgs : [],
         note: r.note || '',
-        // Метрики: подписчики/просмотры на конец дня
         followers: (r.followers === null || r.followers === undefined || r.followers === '') ? null : Number(r.followers),
         views: (r.views === null || r.views === undefined || r.views === '') ? null : Number(r.views)
       };
-      if (dayResultsByDate[d].ig_url) fetchLinkPreview(dayResultsByDate[d].ig_url);
     });
+    // Не делаем dayResultsByDate = {} — иначе при гонке со «Сохранить» кэш обнуляется во время запроса.
+    Object.keys(dayResultsByDate).forEach(k => {
+      const nk = normalizeCalendarDateKey(k) || k;
+      if (inMonth.has(nk)) delete dayResultsByDate[k];
+    });
+    Object.assign(dayResultsByDate, incoming);
+    Object.values(incoming).forEach(rec => { if (rec && rec.ig_url) fetchLinkPreview(rec.ig_url); });
   } catch (e) {
     // тихо
   }
@@ -2681,10 +2693,11 @@ function renderCalendar() {
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
+  const selKey = normalizeCalendarDateKey(calendarSelectedDate) || calendarSelectedDate;
   for (let d = 1; d <= daysInMonth; d++) {
     const dateStr = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const count = scenarios.filter(s => normalizeCalendarDateKey(s.release_date) === dateStr).length;
-    const selected = calendarSelectedDate === dateStr ? 'selected' : '';
+    const selected = selKey === dateStr ? 'selected' : '';
     // Выходные: считаем день недели в сетке (0=пн ... 6=вс)
     const dayOfWeekIdx = (firstDay + (d - 1)) % 7;
     const weekend = (dayOfWeekIdx === 5 || dayOfWeekIdx === 6) ? 'weekend' : '';
@@ -2694,7 +2707,7 @@ function renderCalendar() {
     // Логика:
     // - Будущая дата: плюс только если на дне 0 сценариев
     // - Прошедшая дата: плюс только если отчета дня еще нет
-    const isSelectedDay = calendarSelectedDate === dateStr;
+    const isSelectedDay = selKey === dateStr;
     const isPast = isPastDate(dateStr);
     const isPastOrToday = isPastOrTodayDate(dateStr);
     const drAny = dayResultsByDate && dayResultsByDate[dateStr] ? dayResultsByDate[dateStr] : null;
@@ -2709,7 +2722,7 @@ function renderCalendar() {
     );
 
     // Мини-превью опубликованного ролика (если есть отчет дня с ссылкой)
-    const dr = drAny || (dateStr === calendarSelectedDate ? dayResult : null);
+    const dr = drAny || (dateStr === selKey ? dayResult : null);
     const pubUrl = dr && dr.ig_url ? dr.ig_url : '';
     const storedPreview = dr && dr.link_preview_url ? String(dr.link_preview_url) : '';
     const cached = pubUrl ? linkPreviewCache[pubUrl] : null;
@@ -2750,7 +2763,7 @@ function renderCalendar() {
 }
 
 function selectCalendarDate(dateStr) {
-  calendarSelectedDate = dateStr;
+  calendarSelectedDate = normalizeCalendarDateKey(dateStr) || dateStr;
   // Если дата прошедшая — подгружаем отчеты по этой дате
   Promise.all([
     loadCalendarResultsForDate(calendarSelectedDate),
@@ -2768,7 +2781,7 @@ function changeCalendarMonth(delta) {
 function openCalendarModal() {
   if (!calendarSelectedDate) {
     const today = new Date();
-    calendarSelectedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    calendarSelectedDate = normalizeCalendarDateKey(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`) || '';
   }
   calendarCurrentMonth = new Date(new Date(calendarSelectedDate).getFullYear(), new Date(calendarSelectedDate).getMonth(), 1);
   history.pushState({ modal: 'calendar' }, '');
@@ -2796,7 +2809,7 @@ function openCalendarScenarioPicker(ev, dateStr) {
   // отдельный шаг истории, чтобы кнопка "назад" закрывала этот список
   history.pushState({ modal: 'calendar_pick' }, '');
 
-  calendarPickDate = dateStr;
+  calendarPickDate = normalizeCalendarDateKey(dateStr) || dateStr;
   const overlay = document.getElementById('calendar-pick-overlay');
   const title = document.getElementById('calendar-pick-title');
   const list = document.getElementById('calendar-pick-list');
@@ -2855,7 +2868,7 @@ async function pickScenarioForCalendarDate(scenarioId) {
   // Важно: ждём сохранения даты в Supabase и обновления scenarios[].
   // Раньше renderCalendar() вызывался сразу, без await — клетка не обновлялась, пока не обновишь страницу.
   await setScenarioReleaseDate(scenarioId, calendarPickDate);
-  calendarSelectedDate = calendarPickDate;
+  calendarSelectedDate = normalizeCalendarDateKey(calendarPickDate) || calendarPickDate;
   closeCalendarPick();
   render();
   showToast('Запланировано');
@@ -2880,7 +2893,7 @@ function openDayResultModalForDate(ev, dateStr) {
   // Плюсик на прошедшей дате открывает отчет дня
   if (ev) { ev.preventDefault(); ev.stopPropagation(); }
   if (!dateStr) return;
-  calendarSelectedDate = dateStr;
+  calendarSelectedDate = normalizeCalendarDateKey(dateStr) || dateStr;
   Promise.all([
     loadCalendarResultsForDate(calendarSelectedDate),
     loadDayResultForDate(calendarSelectedDate)
@@ -3061,6 +3074,7 @@ async function saveDayResult() {
     };
     // Обновляем кэш по месяцу, чтобы превью появлялось в календаре сразу (ключ = YYYY-MM-DD как в клетках)
     const dk = normalizeCalendarDateKey(calendarSelectedDate) || calendarSelectedDate;
+    calendarSelectedDate = dk;
     dayResultsByDate[dk] = { ...dayResult };
     if (igUrl) fetchLinkPreview(igUrl);
     renderCalendarPlanList();
