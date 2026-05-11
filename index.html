@@ -1544,8 +1544,18 @@ async function syncOfflineQueue() {
 
 async function api(path, method = 'GET', body = null) {
   const res = await fetch(SUPABASE_URL + path, { method, headers: H, body: body ? JSON.stringify(body) : null });
-  if (!res.ok) throw new Error(await res.text());
   const text = await res.text();
+  if (!res.ok) {
+    // Показываем понятную ошибку от Supabase (часто там JSON с полями message/details/hint)
+    let msg = text || `HTTP ${res.status}`;
+    try {
+      const j = text ? JSON.parse(text) : null;
+      if (j) {
+        msg = j.message || j.error_description || j.details || j.hint || msg;
+      }
+    } catch (e) {}
+    throw new Error(String(msg).slice(0, 500));
+  }
   return text ? JSON.parse(text) : null;
 }
 
@@ -2991,7 +3001,8 @@ async function saveDayResult() {
     document.getElementById('day-result-overlay').classList.remove('open');
     showToast('Отчет сохранен');
   } catch (e) {
-    showToast('Не удалось сохранить отчет');
+    const msg = (e && e.message ? e.message : 'Не удалось сохранить отчет');
+    showToast(msg.slice(0, 180));
   }
 }
 
