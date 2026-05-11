@@ -470,8 +470,9 @@
     z-index: 2;
     pointer-events: none;
   }
-  .calendar-metric.top { top: 4px; }
-  .calendar-metric.bottom { bottom: 4px; }
+  /* Вынесли цифры немного над/под квадратом (лучше видно на телефоне) */
+  .calendar-metric.top { top: -10px; }
+  .calendar-metric.bottom { bottom: -10px; }
 
   /* Мини-превью опубликованного ролика в клетке календаря */
   .calendar-pub-bg {
@@ -2528,10 +2529,21 @@ function renderCalendarPlanList() {
   if (!list) return;
   const items = getCalendarItemsForDate(calendarSelectedDate);
   const past = isPastDate(calendarSelectedDate);
-  const dayReportBlock = past ? (() => {
+  const pastOrToday = isPastOrTodayDate(calendarSelectedDate);
+  const dayReportBlock = pastOrToday ? (() => {
     const hasLink = dayResult && dayResult.ig_url;
     const imgCount = dayResult && dayResult.images ? dayResult.images.length : 0;
     const note = dayResult && dayResult.note ? dayResult.note : '';
+    const followers = (dayResult && dayResult.followers !== null && dayResult.followers !== undefined && !Number.isNaN(Number(dayResult.followers))) ? Number(dayResult.followers) : null;
+    const views = (dayResult && dayResult.views !== null && dayResult.views !== undefined && !Number.isNaN(Number(dayResult.views))) ? Number(dayResult.views) : null;
+    const folText = (followers !== null) ? followers.toLocaleString('ru-RU') : '';
+    const viewText = (views !== null) ? views.toLocaleString('ru-RU') : '';
+    const metricsBlock = (folText || viewText) ? `
+      <div style="margin-top:8px;font-size:12px;color:var(--text2);line-height:1.35">
+        ${folText ? `<div><span style="color:var(--muted);font-weight:800">Подписчики:</span> <span style="font-weight:800">${folText}</span></div>` : ``}
+        ${viewText ? `<div><span style="color:var(--muted);font-weight:800">Просмотры:</span> <span style="font-weight:800">${viewText}</span></div>` : ``}
+      </div>
+    ` : ``;
     return `
       <div class="calendar-plan-item" style="border-style:dashed">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -2544,6 +2556,7 @@ function renderCalendarPlanList() {
           <span style="font-size:11px;color:var(--muted);font-weight:800">Скрины: ${imgCount}</span>
           <button class="media-action-btn" style="padding:6px 10px" onclick="openDayResultModal(event)">Отчет</button>
         </div>
+        ${metricsBlock}
         ${hasLink ? `<div style="margin-top:8px">${renderLinkPreviewOrLink(dayResult.ig_url)}</div>` : ``}
         ${imgCount > 0 ? `
           <div style="margin-top:8px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px">
