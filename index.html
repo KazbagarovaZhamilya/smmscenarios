@@ -2429,18 +2429,23 @@ function formatDateLabelRu(dateStr) {
   return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
 }
 
-// Числа над клеткой: на телефоне — короткая запись (например 12,5 тыс.), без обрезки «…»
+// Числа над клеткой: на телефоне — короткая запись (например 12,5к), без обрезки «…»
 function formatCalendarMetricCell(n) {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return '';
   const x = Math.trunc(Number(n));
   const narrow = typeof window !== 'undefined' && window.innerWidth < 540;
   if (narrow && x >= 1000) {
     try {
-      return new Intl.NumberFormat('ru-RU', {
+      const s = new Intl.NumberFormat('ru-RU', {
         notation: 'compact',
         compactDisplay: 'short',
         maximumFractionDigits: 1,
       }).format(x);
+      // Заменяем русские суффиксы "тыс."/"млн"/"млрд" на короткие "к"/"М"/"B"
+      return s
+        .replace(/\s*тыс\.?/i, 'к')
+        .replace(/\s*млрд\.?/i, 'B')
+        .replace(/\s*млн\.?/i, 'М');
     } catch (e) {
       return x.toLocaleString('ru-RU');
     }
@@ -2551,6 +2556,9 @@ function renderCalendarPlanList() {
     const hasLink = dayResult && dayResult.ig_url;
     const imgCount = dayResult && dayResult.images ? dayResult.images.length : 0;
     const note = dayResult && dayResult.note ? dayResult.note : '';
+    const followersNum = (dayResult && dayResult.followers !== null && dayResult.followers !== undefined && !Number.isNaN(Number(dayResult.followers))) ? Number(dayResult.followers) : null;
+    const viewsNum = (dayResult && dayResult.views !== null && dayResult.views !== undefined && !Number.isNaN(Number(dayResult.views))) ? Number(dayResult.views) : null;
+    const hasStats = followersNum !== null || viewsNum !== null;
     return `
       <div class="calendar-plan-item" style="border-style:dashed">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -2563,6 +2571,12 @@ function renderCalendarPlanList() {
           <span style="font-size:11px;color:var(--muted);font-weight:800">Скрины: ${imgCount}</span>
           <button class="media-action-btn" style="padding:6px 10px" onclick="openDayResultModal(event)">Отчет</button>
         </div>
+        ${hasStats ? `
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--text2);line-height:1.4">
+            ${followersNum !== null ? `<div><span style="color:var(--muted);font-weight:700">Подписчики:</span> <span style="font-weight:800;color:var(--text)">${Math.trunc(followersNum).toLocaleString('ru-RU')}</span></div>` : ``}
+            ${viewsNum !== null ? `<div><span style="color:var(--muted);font-weight:700">Просмотры:</span> <span style="font-weight:800;color:var(--text)">${Math.trunc(viewsNum).toLocaleString('ru-RU')}</span></div>` : ``}
+          </div>
+        ` : ``}
         ${hasLink ? `<div style="margin-top:8px">${renderLinkPreviewOrLink(dayResult.ig_url)}</div>` : ``}
         ${imgCount > 0 ? `
           <div style="margin-top:8px;display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px">
