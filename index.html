@@ -2611,7 +2611,9 @@ function renderCalendarPlanList() {
   })() : '';
 
   if (items.length === 0) {
-    list.innerHTML = dayReportBlock + `<div class="calendar-plan-empty">${calendarSelectedDate ? `На ${formatDateLabelRu(calendarSelectedDate)} ничего не запланировано` : 'Выбери дату'}</div>`;
+    // Для прошедших/сегодняшней даты уже показан блок "Отчет дня" — не дублируем плашкой "ничего не запланировано".
+    const emptyMsg = past ? '' : `<div class="calendar-plan-empty">${calendarSelectedDate ? `На ${formatDateLabelRu(calendarSelectedDate)} ничего не запланировано` : 'Выбери дату'}</div>`;
+    list.innerHTML = dayReportBlock + emptyMsg;
     return;
   }
 
