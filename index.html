@@ -2439,9 +2439,13 @@ function formatDateLabelRu(dateStr) {
 }
 
 // Числа над клеткой: на телефоне — короткая запись (например 12,5к), без обрезки «…»
-function formatCalendarMetricCell(n) {
+// Подписчики (kind='followers') всегда показываем полным числом — точные цифры важны.
+function formatCalendarMetricCell(n, kind) {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return '';
   const x = Math.trunc(Number(n));
+  if (kind === 'followers') {
+    return x.toLocaleString('ru-RU');
+  }
   const narrow = typeof window !== 'undefined' && window.innerWidth < 540;
   if (narrow && x >= 1000) {
     try {
@@ -2731,8 +2735,8 @@ function renderCalendar() {
     // Форматируем числа красиво (10 240 вместо 10240)
     const fol = (dr && dr.followers !== null && dr.followers !== undefined && !Number.isNaN(Number(dr.followers))) ? Number(dr.followers) : null;
     const vw = (dr && dr.views !== null && dr.views !== undefined && !Number.isNaN(Number(dr.views))) ? Number(dr.views) : null;
-    const folText = (fol !== null) ? formatCalendarMetricCell(fol) : '';
-    const viewText = (vw !== null) ? formatCalendarMetricCell(vw) : '';
+    const folText = (fol !== null) ? formatCalendarMetricCell(fol, 'followers') : '';
+    const viewText = (vw !== null) ? formatCalendarMetricCell(vw, 'views') : '';
 
     cells.push(`
       <!-- Важно: не делаем "кнопку в кнопке". Иначе маленький "+" может не показываться/не нажиматься -->
