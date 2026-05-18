@@ -342,15 +342,7 @@
     content: ''; position: absolute; top: 0; left: 12px; right: 12px;
     height: 2.5px; border-radius: 0 0 3px 3px; background: var(--nav-color, var(--accent));
   }
-  /* width/height = реальный кружок 8px, но padding+margin расширяют хитбокс
-     до ~24px, чтобы пальцем легко попасть и открыть редактирование проекта. */
-  .nav-dot {
-    width: 8px; height: 8px; border-radius: 50%;
-    padding: 8px; margin: -8px;
-    background-clip: content-box;
-    transition: transform 0.15s;
-    cursor: pointer;
-  }
+  .nav-dot { width: 8px; height: 8px; border-radius: 50%; transition: transform 0.15s; }
   .nav-item.active .nav-dot { transform: scale(1.3); }
   .nav-label {
     font-size: 10px; font-weight: 600; color: var(--muted);
@@ -1763,15 +1755,10 @@ function showNoProject() {
 
 function renderNav() {
   const el = document.getElementById('nav-projects');
-  // Тап по кружку открывает редактирование проекта (только админ).
-  // По остальной части кнопки — переключение на проект.
-  const dotEdit = isAdmin()
-    ? `onclick="event.stopPropagation();editProjectMenu(event,__PID__)"`
-    : '';
   el.innerHTML = projects.map(p => `
     <button class="nav-item ${p.id === currentProjectId ? 'active' : ''}" style="--nav-color:${p.color}"
       onclick="switchProject(${p.id})" oncontextmenu="editProjectMenu(event,${p.id})">
-      <div class="nav-dot" style="background:${p.color}" ${dotEdit.replace('__PID__', p.id)}></div>
+      <div class="nav-dot" style="background:${p.color}"></div>
       <span class="nav-label">${p.name}</span>
     </button>`).join('');
 }
