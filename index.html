@@ -1910,8 +1910,12 @@ function updateCounter() {
 
 async function cycleStatus(id) {
   const s = scenarios.find(x => x.id === id); if (!s) return;
-  const order = ['active','draft','done'];
-  const next = order[(order.indexOf(s.status || 'active') + 1) % 3];
+  // Цикл: черновик → активный → готово → черновик. Так логично:
+  // сырая идея зреет до рабочего сценария, потом помечается выполненным.
+  const order = ['draft','active','done'];
+  const cur = s.status || 'active';
+  const idx = order.indexOf(cur);
+  const next = order[((idx < 0 ? 1 : idx) + 1) % order.length];
   try {
     await api(`/rest/v1/scenarios?id=eq.${id}`, 'PATCH', { status: next });
     s.status = next; render();
