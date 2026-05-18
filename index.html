@@ -2154,7 +2154,19 @@ function closeScenarioModal(preserveDraft = true, fromPopState = false) {
   // Поэтому при закрытии через UI делаем history.back(), а реальное закрытие делаем в обработчике popstate.
   const overlay = document.getElementById('scenario-overlay');
   if (!fromPopState && overlay && overlay.classList.contains('open')) {
-    if (preserveDraft) saveScenarioDraft();
+    if (preserveDraft) {
+      saveScenarioDraft();
+    } else {
+      // Сценарий уже сохранён (preserveDraft=false): обнуляем поля СЕЙЧАС,
+      // чтобы popstate-вызов closeScenarioModal не пересоздал черновик
+      // из всё ещё заполненных инпутов.
+      document.getElementById('inp-hero').value = '';
+      document.getElementById('inp-title').value = '';
+      document.getElementById('inp-desc').value = '';
+      document.getElementById('inp-release-date').value = '';
+      pendingPhotos = [];
+      scenarioDraftCache = null;
+    }
     clearTimeout(draftAutosaveTimer);
     history.back();
     return;
