@@ -2789,6 +2789,9 @@ function renderCalendar() {
     const drBest = (isSelectedDay && dayResult) ? dayResult : drAny;
     const hasAnyDayReport = !!(drBest && (drBest.id || drBest.ig_url || (drBest.images && drBest.images.length > 0) || drBest.note || drBest.followers !== null || drBest.views !== null));
     const hasSelectedDayReport = isSelectedDay && !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note || dayResult.followers !== null || dayResult.views !== null));
+    // R-бейдж в клетке показываем только если есть реальный контент (ссылка/скрины/заметка).
+    // Чисто метрики (подписчики/просмотры) и так видны цифрами над/под клеткой — R был бы лишний.
+    const hasContentForBadge = !!(drBest && (drBest.ig_url || (drBest.images && drBest.images.length > 0) || drBest.note));
     // Права:
     // - Прошедшие даты (Отчет дня): админ и viewer, если отчета еще нет
     // - Будущие даты (планирование сценариев): только админ и только если на дне 0 сценариев
@@ -2820,7 +2823,7 @@ function renderCalendar() {
         ${folText ? `<span class="calendar-metric top">${folText}</span>` : ''}
         ${viewText ? `<span class="calendar-metric bottom">${viewText}</span>` : ''}
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
-        ${pubImg ? `<img class="calendar-pub-img" src="${escapeAttr(pubImg)}" alt="" data-date="${escapeAttr(dateStr)}" data-ig-url="${escapeAttr((dr && dr.ig_url) || '')}" data-row-id="${escapeAttr((dr && dr.id) ? String(dr.id) : '')}" data-old-preview="${escapeAttr(pubImg)}" onerror="__cellPubImgFail(this)"><div class="calendar-pub-overlay"></div>${hasAnyDayReport ? `<span class="calendar-dot cal-r-fallback" style="display:none;position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : ''}` : (hasAnyDayReport ? `<span class="calendar-dot" style="position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : '')}
+        ${pubImg ? `<img class="calendar-pub-img" src="${escapeAttr(pubImg)}" alt="" data-date="${escapeAttr(dateStr)}" data-ig-url="${escapeAttr((dr && dr.ig_url) || '')}" data-row-id="${escapeAttr((dr && dr.id) ? String(dr.id) : '')}" data-old-preview="${escapeAttr(pubImg)}" onerror="__cellPubImgFail(this)"><div class="calendar-pub-overlay"></div>${hasContentForBadge ? `<span class="calendar-dot cal-r-fallback" style="display:none;position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : ''}` : (hasContentForBadge ? `<span class="calendar-dot" style="position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : '')}
         ${showPlus ? (isPast
           ? `<button type="button" class="calendar-add-btn" onclick="openDayResultModalForDate(event,'${dateStr}')">+</button>`
           : `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>`
