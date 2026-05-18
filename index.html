@@ -504,6 +504,19 @@
     pointer-events: none;
     z-index: 0;
   }
+  /* То же самое, но через <img> — нужно для onerror-фолбэка,
+     когда сохранённый link_preview_url (Instagram CDN) протух. */
+  .calendar-pub-img {
+    position: absolute;
+    inset: 3px;
+    width: calc(100% - 6px);
+    height: calc(100% - 6px);
+    border-radius: 8px;
+    object-fit: cover;
+    filter: saturate(1.12) contrast(1.08);
+    pointer-events: none;
+    z-index: 0;
+  }
   .calendar-pub-overlay {
     position: absolute;
     inset: 3px;
@@ -2686,6 +2699,19 @@ async function unlinkScenarioFromDate(ev, id) {
   showToast('Отвязано');
 }
 
+// Колбэк onerror для <img class="calendar-pub-img">: прячем картинку и показываем R-бейдж.
+// Нужен потому что link_preview_url из Instagram CDN иногда протухает,
+// а у background-image нельзя поймать ошибку загрузки.
+window.__cellPubImgFail = function(img) {
+  try {
+    img.style.display = 'none';
+    const parent = img.parentElement;
+    if (!parent) return;
+    const r = parent.querySelector('.cal-r-fallback');
+    if (r) r.style.display = 'inline-flex';
+  } catch (e) {}
+};
+
 function renderCalendar() {
   const title = document.getElementById('calendar-month-title');
   const grid = document.getElementById('calendar-grid');
@@ -2756,8 +2782,7 @@ function renderCalendar() {
         ${folText ? `<span class="calendar-metric top">${folText}</span>` : ''}
         ${viewText ? `<span class="calendar-metric bottom">${viewText}</span>` : ''}
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
-        ${pubImg ? `<div class="calendar-pub-bg" style="background-image:url('${escapeAttr(pubImg)}')"></div><div class="calendar-pub-overlay"></div>` : ''}
-        ${(!pubImg && hasAnyDayReport) ? `<span class="calendar-dot" style="position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : ''}
+        ${pubImg ? `<img class="calendar-pub-img" src="${escapeAttr(pubImg)}" alt="" onerror="__cellPubImgFail(this)"><div class="calendar-pub-overlay"></div>${hasAnyDayReport ? `<span class="calendar-dot cal-r-fallback" style="display:none;position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : ''}` : (hasAnyDayReport ? `<span class="calendar-dot" style="position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : '')}
         ${showPlus ? (isPast
           ? `<button type="button" class="calendar-add-btn" onclick="openDayResultModalForDate(event,'${dateStr}')">+</button>`
           : `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>`
