@@ -2702,15 +2702,53 @@ async function unlinkScenarioFromDate(ev, id) {
 // Колбэк onerror для <img class="calendar-pub-img">: прячем картинку и показываем R-бейдж.
 // Нужен потому что link_preview_url из Instagram CDN иногда протухает,
 // а у background-image нельзя поймать ошибку загрузки.
+// Заодно ставим в очередь авто-обновление превью в БД, чтобы старые отчёты
+// "лечились" сами по мере просмотра календаря.
+const __previewRefreshSeen = new Set();
 window.__cellPubImgFail = function(img) {
   try {
     img.style.display = 'none';
     const parent = img.parentElement;
-    if (!parent) return;
-    const r = parent.querySelector('.cal-r-fallback');
-    if (r) r.style.display = 'inline-flex';
+    if (parent) {
+      const r = parent.querySelector('.cal-r-fallback');
+      if (r) r.style.display = 'inline-flex';
+    }
+    const dateStr = img.dataset.date || '';
+    const igUrl = img.dataset.igUrl || '';
+    const rowId = img.dataset.rowId || '';
+    const oldPreview = img.dataset.oldPreview || '';
+    if (dateStr && igUrl && rowId) {
+      // Защита от спама: один раз на сочетание ряд+ссылка за сессию
+      const key = `${rowId}|${igUrl}|${oldPreview}`;
+      if (__previewRefreshSeen.has(key)) return;
+      __previewRefreshSeen.add(key);
+      refreshDayResultPreview(dateStr, igUrl, rowId, oldPreview);
+    }
   } catch (e) {}
 };
+
+async function refreshDayResultPreview(dateStr, igUrl, rowId, oldPreview) {
+  // Спрашиваем у Edge Function свежий preview (она уже кэширует в Storage),
+  // и если новый URL отличается — обновляем строку в day_results.
+  try {
+    const newUrl = await getPreviewImageUrl(igUrl);
+    if (!newUrl || newUrl === oldPreview) return;
+    await api(`/rest/v1/day_results?id=eq.${encodeURIComponent(rowId)}`, 'PATCH', {
+      link_preview_url: newUrl
+    });
+    // Обновляем локальные кэши, чтобы превью появилось без перезагрузки
+    if (dayResultsByDate && dayResultsByDate[dateStr]) {
+      dayResultsByDate[dateStr].link_preview_url = newUrl;
+    }
+    if (dayResult && dateStr === calendarSelectedDate) {
+      dayResult.link_preview_url = newUrl;
+    }
+    const co = document.getElementById('calendar-overlay');
+    if (co && co.classList.contains('open')) renderCalendar();
+  } catch (e) {
+    // тихо: следующий заход в календарь попробует ещё раз
+  }
+}
 
 function renderCalendar() {
   const title = document.getElementById('calendar-month-title');
@@ -2782,7 +2820,7 @@ function renderCalendar() {
         ${folText ? `<span class="calendar-metric top">${folText}</span>` : ''}
         ${viewText ? `<span class="calendar-metric bottom">${viewText}</span>` : ''}
         ${count > 0 ? `<span class="calendar-dot">${count}</span>` : ''}
-        ${pubImg ? `<img class="calendar-pub-img" src="${escapeAttr(pubImg)}" alt="" onerror="__cellPubImgFail(this)"><div class="calendar-pub-overlay"></div>${hasAnyDayReport ? `<span class="calendar-dot cal-r-fallback" style="display:none;position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : ''}` : (hasAnyDayReport ? `<span class="calendar-dot" style="position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : '')}
+        ${pubImg ? `<img class="calendar-pub-img" src="${escapeAttr(pubImg)}" alt="" data-date="${escapeAttr(dateStr)}" data-ig-url="${escapeAttr((dr && dr.ig_url) || '')}" data-row-id="${escapeAttr((dr && dr.id) ? String(dr.id) : '')}" data-old-preview="${escapeAttr(pubImg)}" onerror="__cellPubImgFail(this)"><div class="calendar-pub-overlay"></div>${hasAnyDayReport ? `<span class="calendar-dot cal-r-fallback" style="display:none;position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : ''}` : (hasAnyDayReport ? `<span class="calendar-dot" style="position:absolute;left:6px;bottom:6px;background:rgba(181,98,42,0.85)">R</span>` : '')}
         ${showPlus ? (isPast
           ? `<button type="button" class="calendar-add-btn" onclick="openDayResultModalForDate(event,'${dateStr}')">+</button>`
           : `<button type="button" class="calendar-add-btn" onclick="openCalendarScenarioPicker(event,'${dateStr}')">+</button>`
