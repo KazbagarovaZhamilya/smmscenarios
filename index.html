@@ -2515,7 +2515,9 @@ async function loadDayResultForDate(dateStr) {
   if (!dateStr || !currentProjectId) return;
   if (!isPastOrToday(dateStr)) return;
   try {
-    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=eq.${dateStr}`);
+    // order=id.desc на случай, если по дате осталось несколько строк (артефакт прошлых гонок) —
+    // берём самую свежую, чтобы её же редактировал PATCH и она же оказывалась в кэше месяца.
+    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=eq.${dateStr}&order=id.desc`);
     if (rows && rows[0]) {
       const r = rows[0];
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
@@ -2548,7 +2550,9 @@ async function loadDayResultsForMonth(monthDate) {
     const end = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
     const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
     const endStr = `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`;
-    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=gte.${startStr}&date=lte.${endStr}&order=date.asc`);
+    // order=date.asc,id.asc: при дублях по одной дате последний (=самый свежий id)
+    // перезапишет в forEach предыдущие — это совпадёт с тем, что выбирает loadDayResultForDate (id.desc, первая).
+    const rows = await api(`/rest/v1/day_results?select=*&project_id=eq.${currentProjectId}&date=gte.${startStr}&date=lte.${endStr}&order=date.asc,id.asc`);
     (rows || []).forEach(r => {
       const imgs = r.images ? (typeof r.images === 'string' ? JSON.parse(r.images) : r.images) : [];
       const d = String(r.date);
@@ -2715,7 +2719,11 @@ function renderCalendar() {
     const isSelectedDay = calendarSelectedDate === dateStr;
     const isPast = isPastOrToday(dateStr);
     const drAny = dayResultsByDate && dayResultsByDate[dateStr] ? dayResultsByDate[dateStr] : null;
-    const hasAnyDayReport = !!(drAny && (drAny.id || drAny.ig_url || (drAny.images && drAny.images.length > 0) || drAny.note || drAny.followers !== null || drAny.views !== null));
+    // Для выбранной даты предпочитаем свежезагруженный dayResult: если в БД оказалось
+    // несколько строк day_results за одну дату, месячный запрос мог перезаписать кэш частичной
+    // строкой без ig_url, а dayResult (loadDayResultForDate) обычно держит первую полноценную.
+    const drBest = (isSelectedDay && dayResult) ? dayResult : drAny;
+    const hasAnyDayReport = !!(drBest && (drBest.id || drBest.ig_url || (drBest.images && drBest.images.length > 0) || drBest.note || drBest.followers !== null || drBest.views !== null));
     const hasSelectedDayReport = isSelectedDay && !!(dayResult && (dayResult.id || dayResult.ig_url || (dayResult.images && dayResult.images.length > 0) || dayResult.note || dayResult.followers !== null || dayResult.views !== null));
     // Права:
     // - Прошедшие даты (Отчет дня): админ и viewer, если отчета еще нет
@@ -2725,8 +2733,9 @@ function renderCalendar() {
       : (isAdmin() && count === 0)
     );
 
-    // Мини-превью опубликованного ролика (если есть отчет дня с ссылкой)
-    const dr = drAny || (dateStr === calendarSelectedDate ? dayResult : null);
+    // Мини-превью опубликованного ролика (если есть отчет дня с ссылкой).
+    // Для выбранной даты — drBest (см. выше), для остальных — drAny.
+    const dr = drBest;
     const pubUrl = dr && dr.ig_url ? dr.ig_url : '';
     const storedPreview = dr && dr.link_preview_url ? String(dr.link_preview_url) : '';
     const cached = pubUrl ? linkPreviewCache[pubUrl] : null;
